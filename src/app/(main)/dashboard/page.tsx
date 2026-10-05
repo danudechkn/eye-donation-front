@@ -202,7 +202,7 @@ export default function Dashboard() {
 
         if (token) {
           setCookie("moph_token", token);
-          sessionStorage.removeItem("moph_token");
+          sessionStorage.setItem("moph_token", token);
           localStorage.removeItem("moph_token");
           // สั่งโหลดข้อมูลใหม่ทันทีที่มี Token เพื่อแก้ปัญหา Race Condition
           refetchCases();
