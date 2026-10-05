@@ -1,18 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
-  Edit3,
-  Trash2,
-  Eye,
-  AlertTriangle,
   RefreshCw,
   CheckCircle2,
-  XCircle,
+  AlertCircle,
+  X,
   Filter,
   Ellipsis,
   ChevronLeft,
@@ -39,13 +36,46 @@ const getStorageStatus = (item: DonorCaseItem) => {
   return "-";
 };
 
+// Component ดวงตาที่ลูกตาดำเลื่อนกลอกซ้าย-ขวาได้จริง พร้อมกะพริบตา
+const AnimatedPupilEyes = ({ className = "w-14 h-14 text-slate-400" }: { className?: string }) => (
+  <svg viewBox="0 0 256 256" className={className} fill="currentColor">
+    <defs>
+      <clipPath id="left-eye-clip">
+        <ellipse cx="80" cy="128" rx="38" ry="60" />
+      </clipPath>
+      <clipPath id="right-eye-clip">
+        <ellipse cx="176" cy="128" rx="38" ry="60" />
+      </clipPath>
+    </defs>
+    <g className="animate-blink">
+      {/* ตาขาวซ้าย-ขวา */}
+      <ellipse cx="80" cy="128" rx="38" ry="60" fill="#f8fafc" stroke="currentColor" strokeWidth="12" />
+      <ellipse cx="176" cy="128" rx="38" ry="60" fill="#f8fafc" stroke="currentColor" strokeWidth="12" />
+
+      {/* ลูกตาดำข้างซ้าย (เลื่อนมองซ้าย-ขวา) */}
+      <g clipPath="url(#left-eye-clip)">
+        <g className="animate-pupil">
+          <circle cx="80" cy="128" r="20" fill="currentColor" />
+          <circle cx="73" cy="120" r="6" fill="#ffffff" />
+        </g>
+      </g>
+
+      {/* ลูกตาดำข้างขวา (เลื่อนมองซ้าย-ขวา) */}
+      <g clipPath="url(#right-eye-clip)">
+        <g className="animate-pupil">
+          <circle cx="176" cy="128" r="20" fill="currentColor" />
+          <circle cx="169" cy="120" r="6" fill="#ffffff" />
+        </g>
+      </g>
+    </g>
+  </svg>
+);
 
 export default function CasesIndexPage() {
   const router = useRouter();
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [filterPotential, setFilterPotential] = useState<string>("all");
   const [filterNegotiate, setFilterNegotiate] = useState<string>("all");
   const [filterStorage, setFilterStorage] = useState<string>("all");
   const [filterGender, setFilterGender] = useState<string>("all");
@@ -66,7 +96,40 @@ export default function CasesIndexPage() {
   // Delete Modal state
   const [deleteTarget, setDeleteTarget] = useState<DonorCaseItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+
+  // ควบคุม Animation เด้งลงมาแสดง และเด้งกลับขึ้นไปข้างบนก่อนหายไป
+  useEffect(() => {
+    if (!notification) {
+      setToastVisible(false);
+      return;
+    }
+    const enterTimer = setTimeout(() => {
+      setToastVisible(true);
+    }, 20);
+
+    const exitTimer = setTimeout(() => {
+      setToastVisible(false);
+    }, 2600);
+
+    const removeTimer = setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+
+    return () => {
+      clearTimeout(enterTimer);
+      clearTimeout(exitTimer);
+      clearTimeout(removeTimer);
+    };
+  }, [notification]);
+
+  const handleCloseNotification = () => {
+    setToastVisible(false);
+    setTimeout(() => {
+      setNotification(null);
+    }, 400);
+  };
 
   // Handle Delete
   const confirmDelete = async () => {
@@ -74,13 +137,12 @@ export default function CasesIndexPage() {
     try {
       setIsDeleting(true);
       await api.deleteCase(deleteTarget.id);
-      setActionSuccessMsg(`ลบข้อมูลเคส HN: ${deleteTarget.hn} สำเร็จแล้ว`);
+      setNotification({ type: "success", message: `ลบข้อมูลเคส HN: ${deleteTarget.hn} สำเร็จแล้ว` });
       setDeleteTarget(null);
       refetch();
-      setTimeout(() => setActionSuccessMsg(null), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "ไม่สามารถลบได้";
-      alert("เกิดข้อผิดพลาดในการลบ: " + msg);
+      setNotification({ type: "error", message: "เกิดข้อผิดพลาดในการลบ: " + msg });
     } finally {
       setIsDeleting(false);
     }
@@ -88,8 +150,6 @@ export default function CasesIndexPage() {
 
   // Filter client-side for additional tags
   const filteredCases = cases.filter((item) => {
-    if (filterPotential === "yes" && item.potential !== 1) return false;
-    if (filterPotential === "no" && item.potential !== 2) return false;
     if (filterNegotiate === "success" && !(item.negotiate_succ === 1 || item.negotiate_succ === 11)) return false;
     if (filterNegotiate === "failed" && (item.negotiate_succ === 1 || item.negotiate_succ === 11)) return false;
     if (filterStorage === "stored") {
@@ -109,13 +169,11 @@ export default function CasesIndexPage() {
   });
 
   const activeFilterCount =
-    (filterPotential !== "all" ? 1 : 0) +
     (filterNegotiate !== "all" ? 1 : 0) +
     (filterStorage !== "all" ? 1 : 0) +
     (filterGender !== "all" ? 1 : 0);
 
   const handleResetFilters = () => {
-    setFilterPotential("all");
     setFilterNegotiate("all");
     setFilterStorage("all");
     setFilterGender("all");
@@ -146,19 +204,36 @@ export default function CasesIndexPage() {
         </div>
       </div>
 
-      {/* Success Notification */}
-      {actionSuccessMsg && (
-        <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>{actionSuccessMsg}</span>
+      {/* ── Floating Pill Notification (Toast with Enter & Exit Spring Animation) ── */}
+      {notification && (
+        <div
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] ${toastVisible
+            ? "opacity-100 translate-y-0 scale-100"
+            : "opacity-0 -translate-y-8 scale-95 pointer-events-none"
+            }`}
+        >
+          <div className="bg-white border border-slate-100 shadow-[0_10px_35px_rgba(0,0,0,0.08)] rounded-full px-5 py-2.5 sm:px-6 sm:py-3 flex items-center gap-3.5 min-w-[280px] sm:min-w-[340px] justify-between">
+            <div className="flex items-center gap-3 truncate">
+              {notification.type === "success" ? (
+                <CheckCircle2 className="w-5 h-5 text-[#2e7d32] shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+              )}
+              <span
+                className={`text-sm font-medium tracking-tight truncate ${notification.type === "success" ? "text-[#1e5631]" : "text-rose-800"
+                  }`}
+              >
+                {notification.message}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseNotification}
+              className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors shrink-0 ml-3 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <button
-            onClick={() => setActionSuccessMsg(null)}
-            className="text-emerald-600 hover:text-emerald-900 text-xs font-bold"
-          >
-            ปิด
-          </button>
         </div>
       )}
 
@@ -173,7 +248,7 @@ export default function CasesIndexPage() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="ค้นหา HN, ชื่อ-สกุล หรือเจ้าหน้าที่..."
+              placeholder="ค้นหา HN, ชื่อ-สกุล . . . "
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && refetch()}
@@ -252,23 +327,6 @@ export default function CasesIndexPage() {
                         <option value="not_stored">จัดเก็บไม่ได้</option>
                       </select>
                     </div>
-
-                    {/* Filter 2: ศักยภาพบริจาค */}
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 mb-1.5">
-                        ศักยภาพบริจาค
-                      </label>
-                      <select
-                        value={filterPotential}
-                        onChange={(e) => setFilterPotential(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium cursor-pointer"
-                      >
-                        <option value="all">ทั้งหมด</option>
-                        <option value="yes">มีศักยภาพ</option>
-                        <option value="no">ไม่มีศักยภาพ</option>
-                      </select>
-                    </div>
-
                     {/* Filter 3: เพศ */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1.5">
@@ -330,8 +388,8 @@ export default function CasesIndexPage() {
                 <tr key="empty">
                   <td colSpan={7} className="py-16 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
-                      <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                        <Eye className="w-6 h-6" />
+                      <div className="w-14 h-14 flex items-center justify-center text-slate-400">
+                        <AnimatedPupilEyes className="w-14 h-14" />
                       </div>
                       <p className="text-base font-semibold text-slate-700">ไม่พบข้อมูลเคสบริจาค</p>
                       <p className="text-base text-slate-400">
@@ -350,33 +408,81 @@ export default function CasesIndexPage() {
                       className="hover:bg-slate-50/80 transition-colors group text-base font-normal text-slate-700"
                     >
                       {/* 1. HN */}
-                      <td className="py-6 px-6 font-mono font-normal text-slate-700 text-base text-center">
-                        {item.hn}
+                      <td className="py-4 px-6 text-center font-mono font-medium text-slate-700 text-sm">
+                        <span className="inline-block px-2.5 py-1 bg-slate-100/90 rounded-lg text-slate-700 font-semibold">
+                          {item.hn}
+                        </span>
                       </td>
 
                       {/* 2. ชื่อ-สกุล */}
-                      <td className="py-4 px-6 font-normal text-slate-700 text-base text-center">
+                      <td className="py-4 px-6 font-medium text-slate-800 text-base text-center">
                         {item.fullname || "ไม่ระบุชื่อ"}
                       </td>
 
                       {/* 3. เพศ */}
-                      <td className="py-4 px-6 font-normal text-slate-700 text-base text-center">
-                        {getGender(item)}
+                      <td className="py-4 px-6 text-center">
+                        {(() => {
+                          const gender = getGender(item);
+                          if (gender === "ชาย") {
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200/60">
+                                ชาย
+                              </span>
+                            );
+                          }
+                          if (gender === "หญิง") {
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-pink-50 text-pink-700 border border-pink-200/60">
+                                หญิง
+                              </span>
+                            );
+                          }
+                          return <span className="text-slate-500 text-sm">{gender}</span>;
+                        })()}
                       </td>
 
                       {/* 4. เลขบัตรประชาชน */}
-                      <td className="py-4 px-6 font-mono font-normal text-slate-700 text-base text-center">
+                      <td className="py-4 px-6 font-mono font-normal text-slate-600 text-sm text-center">
                         {item.cid || "-"}
                       </td>
 
                       {/* 5. ผลเจรจา */}
-                      <td className="py-4 px-6 font-normal text-slate-700 text-base text-center">
-                        {isNegotiateSucc ? "สำเร็จ" : "ไม่สำเร็จ"}
+                      <td className="py-4 px-6 text-center">
+                        {isNegotiateSucc ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
+                            สำเร็จ
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200/80 shadow-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span>
+                            ไม่สำเร็จ
+                          </span>
+                        )}
                       </td>
 
                       {/* 6. สถานะการจัดเก็บ */}
-                      <td className="py-4 px-6 font-normal text-slate-700 text-base text-center">
-                        {getStorageStatus(item)}
+                      <td className="py-4 px-6 text-center">
+                        {(() => {
+                          const status = getStorageStatus(item);
+                          if (status === "จัดเก็บได้") {
+                            return (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200/80 shadow-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-1.5"></span>
+                                จัดเก็บได้
+                              </span>
+                            );
+                          }
+                          if (status === "จัดเก็บไม่ได้") {
+                            return (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200/80">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5"></span>
+                                จัดเก็บไม่ได้
+                              </span>
+                            );
+                          }
+                          return <span className="text-slate-400 text-sm">-</span>;
+                        })()}
                       </td>
 
                       {/* 7. จัดการ (Popover Menu) */}
@@ -388,18 +494,18 @@ export default function CasesIndexPage() {
                               size="sm"
                               aria-label="More options"
                               variant="tertiary"
-                              className="w-8 h-8 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+                              className="w-8 h-8 rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
                             >
                               <Ellipsis className="w-4 h-4" />
                             </Button>
-                            <Popover.Content className="w-28 p-1 shadow-lg border border-slate-200/80 rounded-xl bg-white z-50" offset={8}>
+                            <Popover.Content className="w-28 p-1 shadow-lg border border-slate-200/80 rounded-2xl bg-white z-50" offset={8}>
                               <Popover.Dialog className="outline-none focus:outline-none">
                                 <Popover.Arrow />
                                 <div className="flex flex-col gap-0.5">
                                   <button
                                     type="button"
                                     onClick={() => router.push(`/cases/form?id=${item.id}`)}
-                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors w-full text-left"
+                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-sky-700 hover:bg-sky-50 rounded-xl transition-colors w-full text-left cursor-pointer"
                                   >
                                     Edit
                                   </button>
@@ -407,7 +513,7 @@ export default function CasesIndexPage() {
                                   <button
                                     type="button"
                                     onClick={() => setDeleteTarget(item)}
-                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors w-full text-left"
+                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors w-full text-left cursor-pointer"
                                   >
                                     Delete
                                   </button>
@@ -435,7 +541,7 @@ export default function CasesIndexPage() {
               }}
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${page <= 1
                 ? "text-slate-300 opacity-40 cursor-default"
-                : "text-[#0066FF] hover:bg-[#0066FF]/10 cursor-pointer"
+                : "text-[#29b6f6] hover:bg-[#29b6f6]/10 cursor-pointer"
                 }`}
               aria-label="หน้าก่อนหน้า"
             >
@@ -474,8 +580,8 @@ export default function CasesIndexPage() {
                     type="button"
                     onClick={() => setPage(pageNum)}
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${isActive
-                      ? "bg-[#0066FF] text-white shadow-xs cursor-default"
-                      : "text-slate-600 hover:text-[#0066FF] hover:bg-[#0066FF]/10 cursor-pointer"
+                      ? "bg-[#29b6f6] text-white shadow-xs cursor-default"
+                      : "text-slate-600 hover:text-[#29b6f6] hover:bg-[#29b6f6]/10 cursor-pointer"
                       }`}
                   >
                     {pageNum}
@@ -492,7 +598,7 @@ export default function CasesIndexPage() {
               }}
               className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${page >= totalPages || filteredCases.length < limit
                 ? "text-slate-300 opacity-40 cursor-default"
-                : "text-[#0066FF] hover:bg-[#0066FF]/10 cursor-pointer"
+                : "text-[#29b6f6] hover:bg-[#29b6f6]/10 cursor-pointer"
                 }`}
               aria-label="หน้าถัดไป"
             >
@@ -506,20 +612,14 @@ export default function CasesIndexPage() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <h3 className="text-lg font-bold text-slate-900 text-center mb-1">
+            <h3 className="text-[24px] font-bold text-slate-900 text-center mb-1">
               ยืนยันการลบเคสบริจาค?
             </h3>
             <p className="text-xs text-slate-500 text-center mb-5 leading-relaxed">
-              คุณกำลังจะลบข้อมูลของเคส{" "}
-              <strong className="text-slate-800 font-semibold">
-                {deleteTarget.fullname} (HN: {deleteTarget.hn})
+              <strong className="text-slate-900 font-semibold text-lg">
+                {deleteTarget.fullname} ( HN: {deleteTarget.hn} )
               </strong>
               <br />
-              การดำเนินการนี้ไม่สามารถเรียกคืนได้
             </p>
 
             <div className="flex items-center gap-3">
@@ -527,7 +627,7 @@ export default function CasesIndexPage() {
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition-colors disabled:opacity-50"
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 font-semibold text-[20px] hover:bg-slate-50 transition-colors disabled:opacity-50"
               >
                 ยกเลิก
               </button>
@@ -535,7 +635,7 @@ export default function CasesIndexPage() {
                 type="button"
                 disabled={isDeleting}
                 onClick={confirmDelete}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-colors shadow-md shadow-rose-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[20px] transition-colors shadow-md shadow-rose-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isDeleting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                 <span>ยืนยันลบข้อมูล</span>

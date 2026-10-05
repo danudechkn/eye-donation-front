@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -11,13 +11,37 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import { getCookie, deleteCookie } from "@/hooks/useApi";
 
 export function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ name?: string; role?: string } | null>(null);
+
+  useEffect(() => {
+    const loadUser = () => {
+      if (typeof window !== "undefined") {
+        const saved =
+          getCookie("eye_donation_user") ||
+          sessionStorage.getItem("eye_donation_user") ||
+          localStorage.getItem("eye_donation_user");
+        if (saved) {
+          try {
+            setCurrentUser(JSON.parse(saved));
+          } catch { }
+        }
+      }
+    };
+
+    loadUser();
+    window.addEventListener("storage", loadUser);
+    return () => window.removeEventListener("storage", loadUser);
+  }, [pathname]);
+
 
   const isCasesActive = pathname.startsWith("/cases");
-  const isDashboardActive = pathname === "/dashborad";
+  const isDashboardActive =
+    pathname === "/dashborad" || pathname === "/dashboard" || pathname === "/";
 
   return (
     <aside
@@ -65,7 +89,7 @@ export function Sidebar() {
         <nav className="p-3 space-y-1 overflow-y-auto flex-1">
           {/* Dashboard */}
           <Link
-            href="/"
+            href="/dashboard"
             title={!isOpen ? "Dashboard" : undefined}
             className={`flex items-center rounded-xl text-sm font-semibold transition-all duration-200 ${isOpen ? "px-3.5 py-2.5 gap-3" : "p-3 justify-center"
               } ${isDashboardActive
@@ -115,15 +139,28 @@ export function Sidebar() {
               </div>
               <div className="truncate">
                 <p className="text-xs font-bold text-slate-800 truncate">
-                  พยาบาลประสานงาน
+                  {currentUser?.name || "พยาบาลประสานงาน"}
                 </p>
-                <p className="text-[11px] text-slate-400 truncate">ศูนย์ดวงตา</p>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {currentUser?.role === "admin" ? "ผู้ดูแลระบบ" : "ศูนย์ดวงตา"}
+                </p>
               </div>
             </div>
           )}
           <button
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                deleteCookie("moph_token");
+                deleteCookie("token");
+                deleteCookie("eye_donation_user");
+                deleteCookie("provider_profile");
+                sessionStorage.clear();
+                localStorage.clear();
+                window.location.href = "/login";
+              }
+            }}
             title="ออกจากระบบ"
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>

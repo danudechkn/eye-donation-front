@@ -15,16 +15,27 @@ import {
 import { api, DonorCasePayload } from "@/hooks/useApi";
 import { Select, ListBox } from "@heroui/react";
 
-const CustomSelect = ({ value, onChange, options }: any) => (
+const CustomSelect = ({
+  value,
+  onChange,
+  options,
+  placeholder = "-- เลือก --",
+}: {
+  value?: number | null;
+  onChange: (val: number) => void;
+  options: { value: number; label: string }[];
+  placeholder?: string;
+}) => (
   <Select
     aria-label="Select option"
-    selectedKey={value.toString()}
+    placeholder={placeholder}
+    selectedKey={value != null && value !== 0 ? value.toString() : null}
     onSelectionChange={(key) => {
       if (key) onChange(Number(key));
     }}
   >
     <Select.Trigger className="h-11 px-5 bg-white border border-slate-200/90 rounded-full data-[focus=true]:border-sky-400 data-[focus=true]:ring-2 data-[focus=true]:ring-sky-100 shadow-none data-[hover=true]:bg-slate-50 transition-all w-full flex items-center justify-between">
-      <Select.Value className="text-sm font-medium text-slate-700 group-data-[has-value=true]:text-slate-700" />
+      <Select.Value className="text-sm font-medium text-slate-700 data-[placeholder]:text-slate-400 group-data-[has-value=true]:text-slate-700" />
     </Select.Trigger>
     <Select.Popover>
       <ListBox>
@@ -37,6 +48,11 @@ const CustomSelect = ({ value, onChange, options }: any) => (
     </Select.Popover>
   </Select>
 );
+
+const formatToLocalDateTimeInput = (d: Date = new Date()) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 function DonorCaseFormContent() {
   const router = useRouter();
@@ -91,7 +107,7 @@ function DonorCaseFormContent() {
   const [deathtext, setDeathtext] = useState("");
   const [icd10, setIcd10] = useState("");
   const [potential, setPotential] = useState(1);
-  const [braincardiac, setBraincardiac] = useState(1);
+  const [braincardiac, setBraincardiac] = useState<number | null>(null);
   const [negotiate, setNegotiate] = useState(1);
   const [chkpotential, setChkpotential] = useState(1);
   const [negotiate_succ, setNegotiate_succ] = useState(1);
@@ -106,7 +122,7 @@ function DonorCaseFormContent() {
   const [wardtotc, setWardtotc] = useState(1);
   const [commentnonchk, setCommentnonchk] = useState("");
   const [firststaff, setFirststaff] = useState("");
-  const [firsttime, setFirsttime] = useState("");
+  const [firsttime, setFirsttime] = useState(() => (isEditMode ? "" : formatToLocalDateTimeInput()));
 
   // ── Load on Edit ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -122,7 +138,7 @@ function DonorCaseFormContent() {
           setCid(d.cid || "");
           setDeathtext(d.deathtext || "");
           setIcd10(d.icd10 || "");
-          setBraincardiac(Number(d.braincardiac) || 1);
+          setBraincardiac(d.braincardiac != null ? Number(d.braincardiac) : null);
           setPotential(Number(d.potential) || 1);
           setChkpotential(Number(d.chkpotential) || 1);
           setCommentnonchk(d.commentnonchk || "");
@@ -137,7 +153,12 @@ function DonorCaseFormContent() {
           setGeteye_staff(d.geteye_staff || "");
           setFirststaff(d.firststaff || "");
           const ft = d.fristtime || (d as unknown as { firsttime?: string }).firsttime;
-          if (ft) setFirsttime(new Date(ft).toISOString().slice(0, 16));
+          if (ft) {
+            const parsed = new Date(ft);
+            if (!isNaN(parsed.getTime())) {
+              setFirsttime(formatToLocalDateTimeInput(parsed));
+            }
+          }
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "";
@@ -170,6 +191,7 @@ function DonorCaseFormContent() {
         if (p.cid || p.citizencardno) setCid(String(p.cid || p.citizencardno));
         if (p.deathtext || p.diagdetail) setDeathtext(String(p.deathtext || p.diagdetail));
         if (p.icd10 || p.icdcode) setIcd10(String(p.icd10 || p.icdcode));
+        if (p.braincardiac) setBraincardiac(Number(p.braincardiac));
         setNotification({ type: "success", message: `พบข้อมูลผู้ป่วย: ${p.fullname || name || foundHn}` });
         setTimeout(() => setNotification(null), 3000);
       } else {
@@ -185,11 +207,30 @@ function DonorCaseFormContent() {
 
   // ── Save Case ─────────────────────────────────────────────────────────────
   const handleSaveCase = async () => {
-    // ตรวจสอบเฉพาะ HN ก่อนบันทึกลงฐานข้อมูลจริง
+    // ตรวจสอบ HN
     if (!hn.trim()) {
       setNotification({
         type: "error",
         message: "กรุณาระบุเลข HN ผู้ป่วยก่อนบันทึกข้อมูล",
+      });
+      return;
+    }
+
+    // ตรวจสอบฟิลด์ที่ต้องห้ามว่าง (Nullable = NO)
+    const missingFields: string[] = [];
+    if (!hn.trim()) missingFields.push("เลข HN");
+    if (braincardiac === null || braincardiac === undefined) missingFields.push("braincardiac (ประเภทการเสียชีวิต)");
+    if (potential === null || potential === undefined) missingFields.push("potential");
+    if (chkpotential === null || chkpotential === undefined) missingFields.push("chkpotential");
+    if (wardtotc === null || wardtotc === undefined) missingFields.push("หอผู้ป่วยแจ้ง TC (wardtotc)");
+    if (negotiate === null || negotiate === undefined) missingFields.push("negotiate");
+    if (geteye === null || geteye === undefined) missingFields.push("geteye");
+    if (eyetotal === null || eyetotal === undefined) missingFields.push("eyetotal");
+
+    if (missingFields.length > 0) {
+      setNotification({
+        type: "error",
+        message: `กรอกข้อมูลไม่ครบ (จำเป็นต้องระบุ): ${missingFields.join(", ")}`
       });
       return;
     }
@@ -202,7 +243,7 @@ function DonorCaseFormContent() {
         cid: cid.trim() || undefined,
         deathtext: deathtext.trim() || null,
         icd10: icd10.trim() || null,
-        braincardiac,
+        braincardiac: braincardiac as number,
         potential,
         chkpotential,
         commentnonchk: commentnonchk.trim() || null,
@@ -218,7 +259,6 @@ function DonorCaseFormContent() {
         geteye_staff: geteye_staff.trim() || null,
         firststaff: firststaff.trim() || "-",
         firsttime: firsttime ? new Date(firsttime).toISOString() : null,
-        fristtime: firsttime ? new Date(firsttime).toISOString() : null,
       };
 
       if (isEditMode) {
@@ -417,11 +457,12 @@ function DonorCaseFormContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    braincardiac
+                    braincardiac <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={braincardiac}
                     onChange={setBraincardiac}
+                    placeholder="-- เลือกประเภทการเสียชีวิต --"
                     options={[
                       { value: 1, label: "Brain Death" },
                       { value: 2, label: "Cardiac Death" },
@@ -431,7 +472,7 @@ function DonorCaseFormContent() {
 
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    potential
+                    potential <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={potential}
@@ -445,7 +486,7 @@ function DonorCaseFormContent() {
 
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    chkpotential
+                    chkpotential <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={chkpotential}
@@ -459,7 +500,7 @@ function DonorCaseFormContent() {
 
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    หอผู้ป่วยแจ้ง TC (wardtotc)
+                    หอผู้ป่วยแจ้ง TC (wardtotc) <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={wardtotc}
@@ -490,7 +531,7 @@ function DonorCaseFormContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    negotiate
+                    negotiate <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={negotiate}
@@ -508,7 +549,13 @@ function DonorCaseFormContent() {
                   </label>
                   <CustomSelect
                     value={negotiate_succ}
-                    onChange={setNegotiate_succ}
+                    onChange={(val) => {
+                      setNegotiate_succ(val);
+                      if (val === 12 || val === 2) {
+                        setGeteye(14); // ถ้าเจรจาไม่สำเร็จ ให้ปรับเป็นจัดเก็บไม่ได้อัตโนมัติ
+                        setEyetotal(15); // และจำนวนดวงตาเป็นไม่ได้เก็บ
+                      }
+                    }}
                     options={[
                       { value: 11, label: "สำเร็จ" },
                       { value: 12, label: "ไม่สำเร็จ" },
@@ -534,7 +581,7 @@ function DonorCaseFormContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div className="md:col-span-1">
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    geteye
+                    geteye <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={geteye}
@@ -548,7 +595,7 @@ function DonorCaseFormContent() {
 
                 <div className="md:col-span-1">
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    eyetotal
+                    eyetotal <span className="text-rose-500">*</span>
                   </label>
                   <CustomSelect
                     value={eyetotal}
@@ -615,14 +662,23 @@ function DonorCaseFormContent() {
                     value={firststaff}
                     onChange={(e) => setFirststaff(e.target.value)}
                     placeholder="ระบุชื่อเจ้าหน้าที่ผู้รับเรื่องแรกรับ"
-                    className={pillInputCls}
+                    className={`${pillInputCls}${!firststaff.trim() ? " border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""}`}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    วันและเวลาแรกรับ
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5 pl-1">
+                    <label className="block text-xs md:text-sm font-semibold text-slate-400">
+                      วันและเวลาแรกรับ
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFirsttime(formatToLocalDateTimeInput())}
+                      className="text-[11px] text-sky-500 hover:text-sky-600 font-medium hover:underline transition-colors"
+                    >
+                      ใช้วันเวลาปัจจุบัน
+                    </button>
+                  </div>
                   <input
                     type="datetime-local"
                     value={firsttime}

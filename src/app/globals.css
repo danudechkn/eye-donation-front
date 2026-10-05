@@ -25,3 +25,75 @@ body {
   color: var(--foreground);
   font-family: var(--font-prompt), sans-serif;
 }
+
+@keyframes eyeGlance {
+  0%, 15% {
+    transform: translateX(0) scaleY(1);
+  }
+  18% {
+    transform: translateX(0) scaleY(0.15); /* กะพริบตา */
+  }
+  22% {
+    transform: translateX(0) scaleY(1);
+  }
+  28%, 45% {
+    transform: translateX(-7px) rotate(-4deg); /* เหลือบมองซ้าย */
+  }
+  52%, 62% {
+    transform: translateX(0) rotate(0deg) scaleY(1); /* มองตรง */
+  }
+  65% {
+    transform: translateX(0) scaleY(0.15); /* กะพริบตา */
+  }
+  69% {
+    transform: translateX(0) scaleY(1);
+  }
+  75%, 90% {
+    transform: translateX(7px) rotate(4deg); /* เหลือบมองขวา */
+  }
+  96%, 100% {
+    transform: translateX(0) rotate(0deg) scaleY(1); /* กลับมาตรง */
+  }
+}
+
+.animate-glance {
+  animation: eyeGlance 3s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+@keyframes pupilMove {
+  0%, 15% {
+    transform: translateX(0);
+  }
+  24%, 46% {
+    transform: translateX(-16px); /* ลูกตาดำเลื่อนมองซ้าย */
+  }
+  53%, 63% {
+    transform: translateX(0); /* กลับมาตรงกลาง */
+  }
+  72%, 92% {
+    transform: translateX(16px); /* ลูกตาดำเลื่อนมองขวา */
+  }
+  98%, 100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes eyeBlink {
+  0%, 48%, 53%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.08); /* จังหวะกะพริบตา */
+  }
+}
+
+.animate-pupil {
+  animation: pupilMove 3.6s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: eyeBlink 3.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center center;
+}
