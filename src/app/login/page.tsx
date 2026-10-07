@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { setCookie, getCookie } from "@/hooks/useApi";
+import { setCookie, getCookie, setSessionExpiry } from "@/lib/cookies";
 
 export default function LoginPage() {
   const [isClient, setIsClient] = useState(false);
@@ -171,6 +171,7 @@ export default function LoginPage() {
           loginAt: new Date().toISOString(),
         };
         setCookie("eye_donation_user", JSON.stringify(userObj));
+        setSessionExpiry();
         sessionStorage.setItem("eye_donation_user", JSON.stringify(userObj));
         localStorage.removeItem("eye_donation_user");
         window.dispatchEvent(new Event("storage"));
@@ -262,22 +263,17 @@ export default function LoginPage() {
           </div>
 
           <div className="w-full px-4">
-            <div className="flex items-center text-[#006E8C] font-semibold text-sm mb-3">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
-              </svg>
-              Provider ID
-            </div>
+
 
             <button
               onClick={login}
               className="w-full bg-gradient-to-r from-[#0284c7] to-[#10b981] text-white rounded-xl py-4 font-bold text-lg hover:shadow-lg hover:opacity-90 transition-all flex justify-center items-center group relative overflow-hidden cursor-pointer active:scale-[0.98]"
             >
               <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out"></div>
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+              <svg className="w-5 h-5 mr-2 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
               </svg>
-              LOGIN
+              <span className="relative z-10">PROVIDER ID LOGIN</span>
             </button>
           </div>
 

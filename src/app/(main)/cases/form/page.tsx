@@ -11,6 +11,7 @@ import {
   AlertCircle,
   RefreshCw,
   X,
+  Send,
 } from "lucide-react";
 import { api, DonorCasePayload } from "@/hooks/useApi";
 import { Select, ListBox } from "@heroui/react";
@@ -123,6 +124,8 @@ function DonorCaseFormContent() {
   const [commentnonchk, setCommentnonchk] = useState("");
   const [firststaff, setFirststaff] = useState("");
   const [firsttime, setFirsttime] = useState(() => (isEditMode ? "" : formatToLocalDateTimeInput()));
+  const [caseStatus, setCaseStatus] = useState<number>(1);
+  const [isSendingMoph, setIsSendingMoph] = useState<boolean>(false);
 
   // ── Load on Edit ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -152,6 +155,7 @@ function DonorCaseFormContent() {
           setCommentnoget(d.commentnoget || "");
           setGeteye_staff(d.geteye_staff || "");
           setFirststaff(d.firststaff || "");
+          setCaseStatus(d.status !== undefined ? Number(d.status) : 1);
           const ft = d.fristtime || (d as unknown as { firsttime?: string }).firsttime;
           if (ft) {
             const parsed = new Date(ft);
@@ -202,6 +206,28 @@ function DonorCaseFormContent() {
       setNotification({ type: "error", message: "ค้นหาไม่สำเร็จ: " + msg });
     } finally {
       setSearchingPatient(false);
+    }
+  };
+
+  // ── Send to MOPH from Form ────────────────────────────────────────────────
+  const handleSendMophFromForm = async () => {
+    if (!editId) return;
+    try {
+      setIsSendingMoph(true);
+      await api.sendToMoph(editId);
+      setCaseStatus(2);
+      setNotification({
+        type: "success",
+        message: `ส่งข้อมูลเคส HN: ${hn} ไปยังระบบ สธ. (MOPH) เรียบร้อยแล้ว`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
+      setNotification({
+        type: "error",
+        message: `ไม่สามารถส่งข้อมูลไป MOPH ได้: ${msg}`,
+      });
+    } finally {
+      setIsSendingMoph(false);
     }
   };
 
@@ -295,7 +321,7 @@ function DonorCaseFormContent() {
     <div className="min-h-screen bg-[#f8fafc] px-4 sm:px-6 md:px-10 py-6 md:py-8">
       <div className="w-full space-y-4">
         {/* ── Breadcrumb / Back Link ── */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <Link
             href="/cases"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors"
@@ -303,9 +329,24 @@ function DonorCaseFormContent() {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>กลับหน้ารายการเคสบริจาค</span>
           </Link>
-          <span className="text-xs text-slate-400 font-medium">
-            {isEditMode ? `แก้ไขเคส #${editId}` : "เพิ่มเคสบริจาคดวงตา"}
-          </span>
+          <div className="flex items-center gap-2">
+            {isEditMode && (
+              caseStatus === 2 ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                  ส่ง สธ. (MOPH) แล้ว
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
+                  รอส่ง สธ. (MOPH)
+                </span>
+              )
+            )}
+            <span className="text-xs text-slate-400 font-medium">
+              {isEditMode ? `แก้ไขเคส #${editId}` : "เพิ่มเคสบริจาคดวงตา"}
+            </span>
+          </div>
         </div>
 
 
@@ -689,21 +730,42 @@ function DonorCaseFormContent() {
               </div>
             </div>
             {/* ── Footer Actions ── */}
-            <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-4">
+            <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-3 sm:gap-4">
               <button
                 type="button"
                 onClick={() => router.push("/cases")}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full text-sm font-semibold transition-all"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full text-sm font-semibold transition-all cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>ยกเลิก</span>
               </button>
 
+              {isEditMode && (
+                <button
+                  type="button"
+                  disabled={submitting || isSendingMoph}
+                  onClick={handleSendMophFromForm}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 cursor-pointer active:scale-[0.98]"
+                >
+                  {isSendingMoph ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>กำลังส่งไป MOPH...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>{caseStatus === 2 ? "ส่ง สธ. (MOPH) ซ้ำ" : "ส่งข้อมูลไป MOPH"}</span>
+                    </>
+                  )}
+                </button>
+              )}
+
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || isSendingMoph}
                 onClick={handleSaveCase}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 cursor-pointer active:scale-[0.98]"
               >
                 {submitting ? (
                   <>
