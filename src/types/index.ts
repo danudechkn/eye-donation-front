@@ -25,6 +25,8 @@ export interface DonorCaseItem {
   firststaff: string;
   fristtime?: string | null;
   status?: number;
+  is_complete?: number;
+  missing_fields?: string[];
   createdAt?: string;
   updatedAt?: string;
 }

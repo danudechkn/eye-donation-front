@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { api, DonorCasePayload } from "@/hooks/useApi";
 import { Select, ListBox } from "@heroui/react";
+import { useAuth } from "@/context/AuthContext";
 
 const CustomSelect = ({
   value,
@@ -58,6 +59,7 @@ const formatToLocalDateTimeInput = (d: Date = new Date()) => {
 function DonorCaseFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const editId = searchParams.get("id");
   const isEditMode = Boolean(editId);
 
@@ -126,6 +128,8 @@ function DonorCaseFormContent() {
   const [firsttime, setFirsttime] = useState(() => (isEditMode ? "" : formatToLocalDateTimeInput()));
   const [caseStatus, setCaseStatus] = useState<number>(1);
   const [isSendingMoph, setIsSendingMoph] = useState<boolean>(false);
+  const [caseIsComplete, setCaseIsComplete] = useState<number | null>(null);
+  const [caseMissingFields, setCaseMissingFields] = useState<string[]>([]);
 
   // ── Load on Edit ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -154,8 +158,11 @@ function DonorCaseFormContent() {
           setEyetotal(Number(d.eyetotal) ?? 2);
           setCommentnoget(d.commentnoget || "");
           setGeteye_staff(d.geteye_staff || "");
-          setFirststaff(d.firststaff || "");
+          const existingStaff = d.firststaff && d.firststaff.trim() !== "-" ? d.firststaff.trim() : (user?.name || "");
+          setFirststaff(existingStaff);
           setCaseStatus(d.status !== undefined ? Number(d.status) : 1);
+          setCaseIsComplete(d.is_complete !== undefined && d.is_complete !== null ? Number(d.is_complete) : null);
+          setCaseMissingFields(Array.isArray(d.missing_fields) ? d.missing_fields : []);
           const ft = d.fristtime || (d as unknown as { firsttime?: string }).firsttime;
           if (ft) {
             const parsed = new Date(ft);
@@ -172,7 +179,14 @@ function DonorCaseFormContent() {
       }
     }
     load();
-  }, [editId]);
+  }, [editId, user?.name]);
+
+  // เติมชื่อผู้ใช้งานที่ Login อัตโนมัติ หากช่องนี้ยังว่างอยู่หรือเป็น "-"
+  useEffect(() => {
+    if (user?.name && (!firststaff || firststaff.trim() === "" || firststaff.trim() === "-")) {
+      setFirststaff(user.name);
+    }
+  }, [user?.name, firststaff]);
 
   // ── Search HIS Patient ────────────────────────────────────────────────────
   const handleSearchPatient = async (targetHn?: string) => {
@@ -330,6 +344,22 @@ function DonorCaseFormContent() {
             <span>กลับหน้ารายการเคสบริจาค</span>
           </Link>
           <div className="flex items-center gap-2">
+            {isEditMode && (
+              caseIsComplete === 1 ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                  ข้อมูลครบ
+                </span>
+              ) : caseIsComplete === 0 ? (
+                <span
+                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200/80 cursor-help"
+                  title={caseMissingFields.length > 0 ? `ข้อมูลยังไม่ครบ: ${caseMissingFields.join(", ")}` : "ข้อมูลยังไม่ครบถ้วน"}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-500" />
+                  ข้อมูลไม่ครบ {caseMissingFields.length > 0 && `(${caseMissingFields.length})`}
+                </span>
+              ) : null
+            )}
             {isEditMode && (
               caseStatus === 2 ? (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
@@ -695,15 +725,27 @@ function DonorCaseFormContent() {
               {/* Row 7: firststaff (50%) & firsttime (50%) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div>
-                  <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    ชื่อผู้บันทึกแรกรับ (firststaff)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5 pl-1">
+                    <label className="block text-xs md:text-sm font-semibold text-slate-400">
+                      ชื่อผู้บันทึกข้อมูล (firststaff) <span className="text-rose-500">*</span>
+                    </label>
+                    {user?.name && (
+                      <button
+                        type="button"
+                        onClick={() => setFirststaff(user.name)}
+                        className="text-[11px] text-sky-500 hover:text-sky-600 font-medium hover:underline transition-colors cursor-pointer"
+                        title="คลิกเพื่อใส่ชื่อของคุณเป็นผู้บันทึก"
+                      >
+                        ใช้ชื่อฉัน ({user.name})
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={firststaff}
                     onChange={(e) => setFirststaff(e.target.value)}
                     placeholder="ระบุชื่อเจ้าหน้าที่ผู้รับเรื่องแรกรับ"
-                    className={`${pillInputCls}${!firststaff.trim() ? " border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""}`}
+                    className={`${pillInputCls}${!firststaff.trim() || firststaff.trim() === "-" ? " border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""}`}
                   />
                 </div>
 
@@ -743,9 +785,10 @@ function DonorCaseFormContent() {
               {isEditMode && (
                 <button
                   type="button"
-                  disabled={submitting || isSendingMoph}
+                  disabled={submitting || isSendingMoph || caseIsComplete === 0}
                   onClick={handleSendMophFromForm}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 cursor-pointer active:scale-[0.98]"
+                  title={caseIsComplete === 0 && caseMissingFields.length > 0 ? `ข้อมูลยังไม่ครบถ้วน ไม่สามารถส่งได้ (ขาด: ${caseMissingFields.join(", ")})` : undefined}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
                 >
                   {isSendingMoph ? (
                     <>

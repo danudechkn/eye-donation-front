@@ -20,9 +20,69 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Pencil,
+  Trash2,
 } from "lucide-react";
-import { Popover, Button } from "@heroui/react";
+import { Popover, Button, Select, ListBox } from "@heroui/react";
 import { api, useDonorCases, DonorCaseItem } from "@/hooks/useApi";
+
+const CustomSelect = ({
+  value,
+  onChange,
+  options,
+  placeholder = "-- เลือก --",
+}: {
+  value?: string | null;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+}) => (
+  <Select
+    aria-label="Select option"
+    placeholder={placeholder}
+    selectedKey={value != null ? value.toString() : null}
+    onSelectionChange={(key) => {
+      if (key) onChange(key.toString());
+    }}
+  >
+    <Select.Trigger className="h-11 px-5 bg-white border border-slate-200/90 rounded-full data-[focus=true]:border-sky-400 data-[focus=true]:ring-2 data-[focus=true]:ring-sky-100 shadow-none data-[hover=true]:bg-slate-50 transition-all w-full flex items-center justify-between">
+      <Select.Value className="text-sm font-medium text-slate-700 data-[placeholder]:text-slate-400 group-data-[has-value=true]:text-slate-700" />
+    </Select.Trigger>
+    <Select.Popover className="z-[80]">
+      <ListBox>
+        {options.map((opt: any) => (
+          <ListBox.Item key={opt.value.toString()} id={opt.value.toString()} textValue={opt.label}>
+            {opt.label}
+          </ListBox.Item>
+        ))}
+      </ListBox>
+    </Select.Popover>
+  </Select>
+);
+
+const negotiateOptions = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "success", label: "สำเร็จ" },
+  { value: "failed", label: "ไม่สำเร็จ" },
+];
+
+const storageOptions = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "complete", label: "ข้อมูลครบ" },
+  { value: "incomplete", label: "ข้อมูลไม่ครบ" }
+];
+
+const genderOptions = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "male", label: "ชาย" },
+  { value: "female", label: "หญิง" },
+];
+
+const mophOptions = [
+  { value: "all", label: "ทั้งหมด" },
+  { value: "pending", label: "ยังไม่ส่ง (รอส่ง)" },
+  { value: "sent", label: "ส่งแล้ว" },
+];
 
 const getGender = (item: DonorCaseItem) => {
   const anyItem = item as unknown as Record<string, unknown>;
@@ -214,6 +274,8 @@ export default function CasesIndexPage() {
   const filteredCases = cases.filter((item) => {
     if (filterNegotiate === "success" && !(item.negotiate_succ === 1 || item.negotiate_succ === 11)) return false;
     if (filterNegotiate === "failed" && (item.negotiate_succ === 1 || item.negotiate_succ === 11)) return false;
+    if (filterStorage === "complete" && item.is_complete !== 1) return false;
+    if (filterStorage === "incomplete" && item.is_complete === 1) return false;
     if (filterStorage === "stored") {
       const g = Number(item.geteye);
       if (g !== 13 && g !== 1) return false;
@@ -367,46 +429,35 @@ export default function CasesIndexPage() {
                       <label className="block text-xs font-semibold text-slate-500 mb-1.5">
                         ผลเจรจา
                       </label>
-                      <select
+                      <CustomSelect
                         value={filterNegotiate}
-                        onChange={(e) => setFilterNegotiate(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium cursor-pointer"
-                      >
-                        <option value="all">ทั้งหมด</option>
-                        <option value="success">สำเร็จ</option>
-                        <option value="failed">ไม่สำเร็จ</option>
-                      </select>
+                        onChange={setFilterNegotiate}
+                        options={negotiateOptions}
+                      />
                     </div>
 
-                    {/* Filter: สถานะการจัดเก็บ */}
+                    {/* Filter: สถานะข้อมูล */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1.5">
-                        สถานะการจัดเก็บ
+                        สถานะข้อมูล
                       </label>
-                      <select
+                      <CustomSelect
                         value={filterStorage}
-                        onChange={(e) => setFilterStorage(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium cursor-pointer"
-                      >
-                        <option value="all">ทั้งหมด</option>
-                        <option value="stored">จัดเก็บได้</option>
-                        <option value="not_stored">จัดเก็บไม่ได้</option>
-                      </select>
+                        onChange={setFilterStorage}
+                        options={storageOptions}
+                      />
                     </div>
+
                     {/* Filter 3: เพศ */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 mb-1.5">
                         เพศ
                       </label>
-                      <select
+                      <CustomSelect
                         value={filterGender}
-                        onChange={(e) => setFilterGender(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium cursor-pointer"
-                      >
-                        <option value="all">ทั้งหมด</option>
-                        <option value="male">ชาย</option>
-                        <option value="female">หญิง</option>
-                      </select>
+                        onChange={setFilterGender}
+                        options={genderOptions}
+                      />
                     </div>
 
                     {/* Filter 4: สถานะส่ง สธ. (MOPH) */}
@@ -414,15 +465,11 @@ export default function CasesIndexPage() {
                       <label className="block text-xs font-semibold text-slate-500 mb-1.5">
                         สถานะส่ง สธ. (MOPH)
                       </label>
-                      <select
+                      <CustomSelect
                         value={filterMoph}
-                        onChange={(e) => setFilterMoph(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-medium cursor-pointer"
-                      >
-                        <option value="all">ทั้งหมด</option>
-                        <option value="pending">ยังไม่ส่ง (รอส่ง)</option>
-                        <option value="sent">ส่งแล้ว</option>
-                      </select>
+                        onChange={setFilterMoph}
+                        options={mophOptions}
+                      />
                     </div>
                   </div>
                 </Popover.Dialog>
@@ -440,7 +487,7 @@ export default function CasesIndexPage() {
                 <th className="py-4 px-6 text-center">เพศ</th>
                 <th className="py-4 px-6 text-center">เลขบัตรประชาชน</th>
                 <th className="py-4 px-6 text-center">ผลเจรจา</th>
-                <th className="py-4 px-6 text-center">สถานะการจัดเก็บ</th>
+                <th className="py-4 px-6 text-center">สถานะข้อมูล</th>
                 <th className="py-4 px-6 text-center">ส่ง สธ. (MOPH)</th>
                 <th className="py-4 px-6 text-center">จัดการ</th>
               </tr>
@@ -544,28 +591,26 @@ export default function CasesIndexPage() {
                         )}
                       </td>
 
-                      {/* 6. สถานะการจัดเก็บ */}
+                      {/* 6. สถานะข้อมูล (ข้อมูลครบ / ข้อมูลไม่ครบ) */}
                       <td className="py-4 px-6 text-center">
-                        {(() => {
-                          const status = getStorageStatus(item);
-                          if (status === "จัดเก็บได้") {
-                            return (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200/80 shadow-xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 mr-1.5"></span>
-                                จัดเก็บได้
-                              </span>
-                            );
-                          }
-                          if (status === "จัดเก็บไม่ได้") {
-                            return (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200/80">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5"></span>
-                                จัดเก็บไม่ได้
-                              </span>
-                            );
-                          }
-                          return <span className="text-slate-400 text-sm">-</span>;
-                        })()}
+                        {item.is_complete === 1 ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                            ข้อมูลครบ
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200/80 shadow-xs cursor-help"
+                            title={
+                              item.missing_fields && item.missing_fields.length > 0
+                                ? `ข้อมูลยังไม่ครบ: ${item.missing_fields.join(", ")}`
+                                : "ข้อมูลยังไม่ครบถ้วน"
+                            }
+                          >
+                            <AlertCircle className="w-3.5 h-3.5 mr-1.5 text-rose-500" />
+                            ข้อมูลไม่ครบ
+                          </span>
+                        )}
                       </td>
 
                       {/* 6.5 สถานะส่ง สธ. (MOPH) */}
@@ -576,21 +621,10 @@ export default function CasesIndexPage() {
                             ส่งแล้ว
                           </span>
                         ) : (
-                          <div className="inline-flex items-center justify-center gap-2">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
-                              ยังไม่ส่ง
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSendMoph(item)}
-                              title="ส่งข้อมูลไป สธ. (MOPH)"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-sky-500 to-[#0288d1] hover:from-sky-600 hover:to-[#0277bd] text-white rounded-lg text-xs font-semibold shadow-xs hover:shadow transition-all active:scale-95 cursor-pointer"
-                            >
-                              <Send className="w-3 h-3" />
-                              <span>ส่ง สธ.</span>
-                            </button>
-                          </div>
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
+                            ยังไม่ส่ง
+                          </span>
                         )}
                       </td>
 
@@ -607,33 +641,62 @@ export default function CasesIndexPage() {
                             >
                               <Ellipsis className="w-4 h-4" />
                             </Button>
-                            <Popover.Content className="w-36 p-1 shadow-lg border border-slate-200/80 rounded-2xl bg-white z-50" offset={8}>
+                            <Popover.Content className="w-52 p-1.5 shadow-xl border border-slate-200/90 rounded-2xl bg-white z-50" offset={8}>
                               <Popover.Dialog className="outline-none focus:outline-none">
                                 <Popover.Arrow />
-                                <div className="flex flex-col gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenSendMoph(item)}
-                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-sky-700 hover:bg-sky-50 rounded-xl transition-colors w-full text-left cursor-pointer flex items-center gap-2"
-                                  >
-                                    <Send className="w-3.5 h-3.5 text-sky-600" />
-                                    <span>{item.status === 2 ? "ส่ง สธ. ซ้ำ" : "ส่งข้อมูลไป MOPH"}</span>
-                                  </button>
+                                <div className="flex flex-col gap-1">
+                                  {/* 1. ส่งข้อมูลไป MOPH (เอาเมาส์ชี้ถึงจะเป็นสีเขียวอ่อน) */}
+                                  {item.is_complete !== 1 ? (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      title={
+                                        item.missing_fields && item.missing_fields.length > 0
+                                          ? `ข้อมูลยังไม่ครบถ้วน (ขาด: ${item.missing_fields.join(", ")})`
+                                          : "ข้อมูลยังไม่ครบถ้วน ไม่สามารถส่งได้"
+                                      }
+                                      className="w-full px-3 py-2 text-xs font-medium text-slate-400 bg-transparent rounded-xl cursor-not-allowed flex items-center justify-between opacity-60 select-none text-left"
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <Send className="w-4 h-4 text-slate-400 shrink-0" />
+                                        <span className="whitespace-nowrap">ส่งข้อมูลไป MOPH</span>
+                                      </div>
+                                      {/* <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 border border-rose-100 shrink-0">
+                                        ไม่ครบ
+                                      </span> */}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenSendMoph(item)}
+                                      className="group w-full px-3 py-2 text-xs font-medium text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors text-left cursor-pointer flex items-center gap-2.5 active:scale-[0.98]"
+                                    >
+                                      <Send className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors shrink-0" />
+                                      <span className="whitespace-nowrap">{item.status === 2 ? "ส่ง สธ. ซ้ำ" : "ส่งข้อมูลไป MOPH"}</span>
+                                    </button>
+                                  )}
 
+                                  {/* 2. แก้ไขข้อมูล */}
                                   <button
                                     type="button"
                                     onClick={() => router.push(`/cases/form?id=${item.id}`)}
-                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-sky-700 hover:bg-sky-50 rounded-xl transition-colors w-full text-left cursor-pointer"
+                                    className="group w-full px-3 py-2 text-xs font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 rounded-xl transition-colors text-left cursor-pointer flex items-center gap-2.5"
                                   >
-                                    แก้ไขข้อมูล
+                                    <Pencil className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
+                                    <span className="whitespace-nowrap">แก้ไขข้อมูล</span>
                                   </button>
 
+                                  {/* เส้นคั่น */}
+                                  <div className="my-0.5 border-t border-slate-100" />
+
+                                  {/* 3. ลบเคส */}
                                   <button
                                     type="button"
                                     onClick={() => setDeleteTarget(item)}
-                                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors w-full text-left cursor-pointer"
+                                    className="group w-full px-3 py-2 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-left cursor-pointer flex items-center gap-2.5"
                                   >
-                                    ลบเคส
+                                    <Trash2 className="w-4 h-4 text-rose-400 group-hover:text-rose-600 transition-colors shrink-0" />
+                                    <span className="whitespace-nowrap">ลบเคส</span>
                                   </button>
                                 </div>
                               </Popover.Dialog>
@@ -842,8 +905,41 @@ export default function CasesIndexPage() {
               </div>
             </div>
 
-            {/* Note / Alert */}
-            {sendMophTarget.status === 2 ? (
+            {/* Note / Alert or Incomplete Warning */}
+            {sendMophTarget && sendMophTarget.is_complete !== 1 ? (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 mb-4">
+                <div className="flex items-start gap-2.5 text-xs text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-rose-900 mb-1">
+                      ไม่สามารถส่งข้อมูลได้: ข้อมูลยังไม่ครบถ้วน
+                    </p>
+                    <p className="mb-1.5 text-rose-700">
+                      กรุณากรอกข้อมูลที่จำเป็นต่อไปนี้ให้ครบถ้วนก่อนส่งไปยัง สธ. (MOPH):
+                    </p>
+                    {sendMophTarget.missing_fields && sendMophTarget.missing_fields.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {sendMophTarget.missing_fields.map((field, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center px-2 py-0.5 rounded-md bg-white border border-rose-300 text-rose-800 font-semibold text-[11px]"
+                          >
+                            • {field}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/cases/form?id=${sendMophTarget.id}`)}
+                  className="mt-3 w-full py-2 px-3 bg-white border border-rose-300 hover:bg-rose-50 text-rose-700 font-semibold rounded-xl text-xs transition-colors text-center cursor-pointer"
+                >
+                  ไปที่หน้าแก้ไขข้อมูลเคสนี้
+                </button>
+              </div>
+            ) : sendMophTarget?.status === 2 ? (
               <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-amber-800 mb-4">
                 <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
@@ -908,9 +1004,9 @@ export default function CasesIndexPage() {
               </button>
               <button
                 type="button"
-                disabled={isSendingMoph}
+                disabled={isSendingMoph || sendMophTarget?.is_complete !== 1}
                 onClick={confirmSendMoph}
-                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-[#0288d1] hover:from-sky-600 hover:to-[#0277bd] text-white font-semibold text-sm transition-all shadow-md shadow-sky-500/20 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-[#0288d1] hover:from-sky-600 hover:to-[#0277bd] text-white font-semibold text-sm transition-all shadow-md shadow-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
               >
                 {isSendingMoph ? (
                   <>

@@ -546,7 +546,7 @@ export default function Dashboard() {
           </div>
           <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-xs text-slate-500 font-medium">
             <div className="flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-[#29b6f6] shrink-0" />
+
               <span>ส่งต่อสภากาชาดไทย</span>
             </div>
             {stats?.summary?.procurement_success_rate !== undefined && (
