@@ -10,97 +10,49 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  X,
   Send,
 } from "lucide-react";
 import { api, DonorCasePayload } from "@/hooks/useApi";
-import { Select, ListBox } from "@heroui/react";
 import { useAuth } from "@/context/AuthContext";
+import { CustomSelect } from "@/components/CustomSelect";
+import { DateTimePicker } from "@/components/DateTimePicker";
+import { Toast, useToast } from "@/components/Toast";
+import {
+  CHK_POTENTIAL_OPTIONS,
+  DEATH_TYPE_OPTIONS,
+  EYE_TOTAL_OPTIONS,
+  GET_EYE_OPTIONS,
+  NEGOTIATE_OPTIONS,
+  NEGOTIATE_SUCC_OPTIONS,
+  POTENTIAL_OPTIONS,
+  WARD_TO_TC_OPTIONS,
+  formatToLocalDateTimeInput,
+} from "@/lib/caseHelpers";
 
-const CustomSelect = ({
-  value,
-  onChange,
-  options,
-  placeholder = "-- เลือก --",
-}: {
-  value?: number | null;
-  onChange: (val: number) => void;
-  options: { value: number; label: string }[];
-  placeholder?: string;
-}) => (
-  <Select
-    aria-label="Select option"
-    placeholder={placeholder}
-    selectedKey={value != null && value !== 0 ? value.toString() : null}
-    onSelectionChange={(key) => {
-      if (key) onChange(Number(key));
-    }}
-  >
-    <Select.Trigger className="h-11 px-5 bg-white border border-slate-200/90 rounded-full data-[focus=true]:border-sky-400 data-[focus=true]:ring-2 data-[focus=true]:ring-sky-100 shadow-none data-[hover=true]:bg-slate-50 transition-all w-full flex items-center justify-between">
-      <Select.Value className="text-sm font-medium text-slate-700 data-[placeholder]:text-slate-400 group-data-[has-value=true]:text-slate-700" />
-    </Select.Trigger>
-    <Select.Popover>
-      <ListBox>
-        {options.map((opt: any) => (
-          <ListBox.Item key={opt.value.toString()} id={opt.value.toString()} textValue={opt.label}>
-            {opt.label}
-          </ListBox.Item>
-        ))}
-      </ListBox>
-    </Select.Popover>
-  </Select>
-);
+const PILL_INPUT_CLS =
+  "w-full h-11 px-5 bg-white border border-slate-200/90 rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all";
 
-const formatToLocalDateTimeInput = (d: Date = new Date()) => {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+const DISABLED_PILL_INPUT_CLS =
+  "w-full h-11 px-5 bg-slate-100/80 border border-slate-200/90 rounded-full text-sm font-medium text-slate-500 placeholder:text-slate-400 cursor-not-allowed focus:outline-none transition-all";
 
 function DonorCaseFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const {
+    notification,
+    visible: toastVisible,
+    showToast,
+    dismissToast,
+    clearToast,
+  } = useToast();
+
   const editId = searchParams.get("id");
   const isEditMode = Boolean(editId);
-
 
   const [pageLoading, setPageLoading] = useState(isEditMode);
   const [searchingPatient, setSearchingPatient] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [toastVisible, setToastVisible] = useState(false);
-
-  // ควบคุม Animation เด้งลงมาแสดง และเด้งกลับขึ้นไปข้างบนก่อนหายไป
-  useEffect(() => {
-    if (!notification) {
-      setToastVisible(false);
-      return;
-    }
-    const enterTimer = setTimeout(() => {
-      setToastVisible(true);
-    }, 20);
-
-    const exitTimer = setTimeout(() => {
-      setToastVisible(false);
-    }, 2600);
-
-    const removeTimer = setTimeout(() => {
-      setNotification(null);
-    }, 3000);
-
-    return () => {
-      clearTimeout(enterTimer);
-      clearTimeout(exitTimer);
-      clearTimeout(removeTimer);
-    };
-  }, [notification]);
-
-  const handleCloseNotification = () => {
-    setToastVisible(false);
-    setTimeout(() => {
-      setNotification(null);
-    }, 400);
-  };
 
   // ── Form State ────────────────────────────────────────────────────────────
   const [searchHn, setSearchHn] = useState("");
@@ -113,31 +65,35 @@ function DonorCaseFormContent() {
   const [braincardiac, setBraincardiac] = useState<number | null>(null);
   const [negotiate, setNegotiate] = useState(1);
   const [chkpotential, setChkpotential] = useState(1);
-  const [negotiate_succ, setNegotiate_succ] = useState(1);
+  const [negotiateSucc, setNegotiateSucc] = useState(1);
   const [commentnonego, setCommentnonego] = useState("");
   const [geteye, setGeteye] = useState(1);
   const [eyetotal, setEyetotal] = useState(2);
   const [commentnoget, setCommentnoget] = useState("");
-  const [negotiate_staff, setNegotiate_staff] = useState("");
-  const [geteye_staff, setGeteye_staff] = useState("");
+  const [negotiateStaff, setNegotiateStaff] = useState("");
+  const [geteyeStaff, setGeteyeStaff] = useState("");
 
-  // Part 2 fields
   const [wardtotc, setWardtotc] = useState(1);
   const [commentnonchk, setCommentnonchk] = useState("");
   const [firststaff, setFirststaff] = useState("");
-  const [firsttime, setFirsttime] = useState(() => (isEditMode ? "" : formatToLocalDateTimeInput()));
+  const [firsttime, setFirsttime] = useState(() =>
+    isEditMode ? "" : formatToLocalDateTimeInput(),
+  );
   const [caseStatus, setCaseStatus] = useState<number>(1);
-  const [isSendingMoph, setIsSendingMoph] = useState<boolean>(false);
+  const [isSendingMoph, setIsSendingMoph] = useState(false);
   const [caseIsComplete, setCaseIsComplete] = useState<number | null>(null);
   const [caseMissingFields, setCaseMissingFields] = useState<string[]>([]);
 
-  // ── Load on Edit ──────────────────────────────────────────────────────────
+  // ── Load Case on Edit ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!editId) return;
+    let isMounted = true;
+
     async function load() {
       try {
         setPageLoading(true);
         const res = await api.getCaseById(editId as string);
+        if (!isMounted) return;
         if (res.success && res.data) {
           const d = res.data;
           setHn(d.hn || "");
@@ -151,56 +107,66 @@ function DonorCaseFormContent() {
           setCommentnonchk(d.commentnonchk || "");
           setWardtotc(Number(d.wardtotc) || 1);
           setNegotiate(Number(d.negotiate) || 1);
-          setNegotiate_succ(d.negotiate_succ != null ? Number(d.negotiate_succ) : 1);
+          setNegotiateSucc(d.negotiate_succ != null ? Number(d.negotiate_succ) : 1);
           setCommentnonego(d.commentnonnego || "");
-          setNegotiate_staff(d.negotiate_staff || "");
+          setNegotiateStaff(d.negotiate_staff || "");
           setGeteye(Number(d.geteye) || 1);
           setEyetotal(Number(d.eyetotal) ?? 2);
           setCommentnoget(d.commentnoget || "");
-          setGeteye_staff(d.geteye_staff || "");
-          const existingStaff = d.firststaff && d.firststaff.trim() !== "-" ? d.firststaff.trim() : (user?.name || "");
-          setFirststaff(existingStaff);
+          setGeteyeStaff(d.geteye_staff || "");
+          setFirststaff(d.firststaff?.trim() || "-");
           setCaseStatus(d.status !== undefined ? Number(d.status) : 1);
-          setCaseIsComplete(d.is_complete !== undefined && d.is_complete !== null ? Number(d.is_complete) : null);
+          setCaseIsComplete(
+            d.is_complete !== undefined && d.is_complete !== null
+              ? Number(d.is_complete)
+              : null,
+          );
           setCaseMissingFields(Array.isArray(d.missing_fields) ? d.missing_fields : []);
-          const ft = d.fristtime || (d as unknown as { firsttime?: string }).firsttime;
-          if (ft) {
-            const parsed = new Date(ft);
-            if (!isNaN(parsed.getTime())) {
+
+          const rawFirstTime =
+            d.fristtime || (d as unknown as { firsttime?: string }).firsttime;
+          if (rawFirstTime) {
+            const parsed = new Date(rawFirstTime);
+            if (!Number.isNaN(parsed.getTime())) {
               setFirsttime(formatToLocalDateTimeInput(parsed));
             }
           }
         }
       } catch (err: unknown) {
+        if (!isMounted) return;
         const msg = err instanceof Error ? err.message : "";
-        setNotification({ type: "error", message: "โหลดข้อมูลเดิมไม่ได้: " + msg });
+        showToast("error", "โหลดข้อมูลเดิมไม่ได้: " + msg);
       } finally {
-        setPageLoading(false);
+        if (isMounted) setPageLoading(false);
       }
     }
-    load();
-  }, [editId, user?.name]);
 
-  // เติมชื่อผู้ใช้งานที่ Login อัตโนมัติ หากช่องนี้ยังว่างอยู่หรือเป็น "-"
-  useEffect(() => {
-    if (user?.name && (!firststaff || firststaff.trim() === "" || firststaff.trim() === "-")) {
-      setFirststaff(user.name);
-    }
-  }, [user?.name, firststaff]);
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, [editId, showToast]);
+
+  // โหมดแก้ไข: แสดงค่า firststaff เดิม | โหมดสร้างเคส: แสดงชื่อผู้ใช้งานที่ Login (Backend ดึงจาก JWT ตอนบันทึก)
+  const displayFirststaff = isEditMode ? firststaff : (user?.name || "");
 
   // ── Search HIS Patient ────────────────────────────────────────────────────
   const handleSearchPatient = async (targetHn?: string) => {
     const queryHn = (targetHn ?? searchHn ?? hn).trim();
     if (!queryHn) {
-      setNotification({ type: "error", message: "กรุณาระบุเลข HN ในช่องค้นหาก่อน" });
+      showToast("error", "กรุณาระบุเลข HN ในช่องค้นหาก่อน");
       return;
     }
+
     try {
       setSearchingPatient(true);
-      setNotification(null);
+      clearToast();
       const res = await api.searchPatient(queryHn);
       if (res.success && res.data) {
-        const p = (Array.isArray(res.data) ? res.data[0] : res.data) as Record<string, unknown>;
+        const p = (Array.isArray(res.data) ? res.data[0] : res.data) as Record<
+          string,
+          unknown
+        >;
         const name = [p.prename, p.firstname, p.lastname].filter(Boolean).join(" ");
         const foundHn = String(p.hn || queryHn);
         setHn(foundHn);
@@ -210,36 +176,29 @@ function DonorCaseFormContent() {
         if (p.deathtext || p.diagdetail) setDeathtext(String(p.deathtext || p.diagdetail));
         if (p.icd10 || p.icdcode) setIcd10(String(p.icd10 || p.icdcode));
         if (p.braincardiac) setBraincardiac(Number(p.braincardiac));
-        setNotification({ type: "success", message: `พบข้อมูลผู้ป่วย: ${p.fullname || name || foundHn}` });
-        setTimeout(() => setNotification(null), 3000);
+        showToast("success", `พบข้อมูลผู้ป่วย: ${p.fullname || name || foundHn}`);
       } else {
-        setNotification({ type: "error", message: `ไม่พบข้อมูลผู้ป่วย HN: ${queryHn} ในระบบ HIS` });
+        showToast("error", `ไม่พบข้อมูลผู้ป่วย HN: ${queryHn} ในระบบ HIS`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
-      setNotification({ type: "error", message: "ค้นหาไม่สำเร็จ: " + msg });
+      showToast("error", "ค้นหาไม่สำเร็จ: " + msg);
     } finally {
       setSearchingPatient(false);
     }
   };
 
-  // ── Send to MOPH from Form ────────────────────────────────────────────────
+  // ── Send to MOPH ──────────────────────────────────────────────────────────
   const handleSendMophFromForm = async () => {
     if (!editId) return;
     try {
       setIsSendingMoph(true);
       await api.sendToMoph(editId);
       setCaseStatus(2);
-      setNotification({
-        type: "success",
-        message: `ส่งข้อมูลเคส HN: ${hn} ไปยังระบบ สธ. (MOPH) เรียบร้อยแล้ว`,
-      });
+      showToast("success", `ส่งข้อมูลเคส HN: ${hn} ไปยังระบบ สธ. (MOPH) เรียบร้อยแล้ว`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาด";
-      setNotification({
-        type: "error",
-        message: `ไม่สามารถส่งข้อมูลไป MOPH ได้: ${msg}`,
-      });
+      showToast("error", `ไม่สามารถส่งข้อมูลไป MOPH ได้: ${msg}`);
     } finally {
       setIsSendingMoph(false);
     }
@@ -247,36 +206,33 @@ function DonorCaseFormContent() {
 
   // ── Save Case ─────────────────────────────────────────────────────────────
   const handleSaveCase = async () => {
-    // ตรวจสอบ HN
     if (!hn.trim()) {
-      setNotification({
-        type: "error",
-        message: "กรุณาระบุเลข HN ผู้ป่วยก่อนบันทึกข้อมูล",
-      });
+      showToast("error", "กรุณาระบุเลข HN ผู้ป่วยก่อนบันทึกข้อมูล");
       return;
     }
 
-    // ตรวจสอบฟิลด์ที่ต้องห้ามว่าง (Nullable = NO)
     const missingFields: string[] = [];
-    if (!hn.trim()) missingFields.push("เลข HN");
-    if (braincardiac === null || braincardiac === undefined) missingFields.push("braincardiac (ประเภทการเสียชีวิต)");
+    if (braincardiac === null || braincardiac === undefined) {
+      missingFields.push("braincardiac (ประเภทการเสียชีวิต)");
+    }
     if (potential === null || potential === undefined) missingFields.push("potential");
     if (chkpotential === null || chkpotential === undefined) missingFields.push("chkpotential");
-    if (wardtotc === null || wardtotc === undefined) missingFields.push("หอผู้ป่วยแจ้ง TC (wardtotc)");
+    if (wardtotc === null || wardtotc === undefined) {
+      missingFields.push("หอผู้ป่วยแจ้ง TC (wardtotc)");
+    }
     if (negotiate === null || negotiate === undefined) missingFields.push("negotiate");
     if (geteye === null || geteye === undefined) missingFields.push("geteye");
     if (eyetotal === null || eyetotal === undefined) missingFields.push("eyetotal");
 
     if (missingFields.length > 0) {
-      setNotification({
-        type: "error",
-        message: `กรอกข้อมูลไม่ครบ (จำเป็นต้องระบุ): ${missingFields.join(", ")}`
-      });
+      showToast("error", `กรอกข้อมูลไม่ครบ (จำเป็นต้องระบุ): ${missingFields.join(", ")}`);
       return;
     }
+
     try {
       setSubmitting(true);
-      setNotification(null);
+      clearToast();
+
       const payload: DonorCasePayload = {
         hn: hn.trim(),
         fullname: fullname.trim() || undefined,
@@ -289,29 +245,28 @@ function DonorCaseFormContent() {
         commentnonchk: commentnonchk.trim() || null,
         wardtotc,
         negotiate,
-        negotiate_succ,
+        negotiate_succ: negotiateSucc,
         commentnonego: commentnonego.trim() || null,
         commentnonnego: commentnonego.trim() || null,
         geteye,
         eyetotal,
         commentnoget: commentnoget.trim() || null,
-        negotiate_staff: negotiate_staff.trim() || null,
-        geteye_staff: geteye_staff.trim() || null,
-        firststaff: firststaff.trim() || "-",
+        negotiate_staff: negotiateStaff.trim() || null,
+        geteye_staff: geteyeStaff.trim() || null,
         firsttime: firsttime ? new Date(firsttime).toISOString() : null,
       };
 
       if (isEditMode) {
         await api.updateCase(editId as string, payload);
-        setNotification({ type: "success", message: "Case updated successfully" });
+        showToast("success", "Case updated successfully");
       } else {
         await api.createCase(payload);
-        setNotification({ type: "success", message: "Case created successfully" });
+        showToast("success", "Case created successfully");
       }
       setTimeout(() => router.push("/cases"), 1200);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการบันทึก";
-      setNotification({ type: "error", message: msg });
+      showToast("error", msg);
     } finally {
       setSubmitting(false);
     }
@@ -328,13 +283,10 @@ function DonorCaseFormContent() {
     );
   }
 
-  const pillInputCls =
-    "w-full h-11 px-5 bg-white border border-slate-200/90 rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all";
-
   return (
     <div className="min-h-screen bg-[#f8fafc] px-4 sm:px-6 md:px-10 py-6 md:py-8">
       <div className="w-full space-y-4">
-        {/* ── Breadcrumb / Back Link ── */}
+        {/* Breadcrumb / Status Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <Link
             href="/cases"
@@ -343,9 +295,10 @@ function DonorCaseFormContent() {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>กลับหน้ารายการเคสบริจาค</span>
           </Link>
+
           <div className="flex items-center gap-2">
-            {isEditMode && (
-              caseIsComplete === 1 ? (
+            {isEditMode &&
+              (caseIsComplete === 1 ? (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
                   <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                   ข้อมูลครบ
@@ -353,73 +306,44 @@ function DonorCaseFormContent() {
               ) : caseIsComplete === 0 ? (
                 <span
                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200/80 cursor-help"
-                  title={caseMissingFields.length > 0 ? `ข้อมูลยังไม่ครบ: ${caseMissingFields.join(", ")}` : "ข้อมูลยังไม่ครบถ้วน"}
+                  title={
+                    caseMissingFields.length > 0
+                      ? `ข้อมูลยังไม่ครบ: ${caseMissingFields.join(", ")}`
+                      : "ข้อมูลยังไม่ครบถ้วน"
+                  }
                 >
                   <AlertCircle className="w-3.5 h-3.5 mr-1 text-rose-500" />
-                  ข้อมูลไม่ครบ {caseMissingFields.length > 0 && `(${caseMissingFields.length})`}
+                  ข้อมูลไม่ครบ{" "}
+                  {caseMissingFields.length > 0 && `(${caseMissingFields.length})`}
                 </span>
-              ) : null
-            )}
-            {isEditMode && (
-              caseStatus === 2 ? (
+              ) : null)}
+
+            {isEditMode &&
+              (caseStatus === 2 ? (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
                   <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                   ส่ง สธ. (MOPH) แล้ว
                 </span>
               ) : (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse" />
                   รอส่ง สธ. (MOPH)
                 </span>
-              )
-            )}
+              ))}
+
             <span className="text-xs text-slate-400 font-medium">
               {isEditMode ? `แก้ไขเคส #${editId}` : "เพิ่มเคสบริจาคดวงตา"}
             </span>
           </div>
         </div>
 
+        <Toast notification={notification} visible={toastVisible} onClose={dismissToast} />
 
-
-        {/* ── Floating Pill Notification (Toast with Enter & Exit Spring Animation) ── */}
-        {notification && (
-          <div
-            className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] ${toastVisible
-              ? "opacity-100 translate-y-0 scale-100"
-              : "opacity-0 -translate-y-8 scale-95 pointer-events-none"
-              }`}
-          >
-            <div className="bg-white border border-slate-100 shadow-[0_10px_35px_rgba(0,0,0,0.08)] rounded-full px-5 py-2.5 sm:px-6 sm:py-3 flex items-center gap-3.5 min-w-[280px] sm:min-w-[340px] justify-between">
-              <div className="flex items-center gap-3 truncate">
-                {notification.type === "success" ? (
-                  <CheckCircle2 className="w-5 h-5 text-[#2e7d32] shrink-0" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
-                )}
-                <span
-                  className={`text-sm font-medium tracking-tight truncate ${notification.type === "success" ? "text-[#1e5631]" : "text-rose-800"
-                    }`}
-                >
-                  {notification.message}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseNotification}
-                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors shrink-0 ml-3"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Form Card ── */}
+        {/* Form Card */}
         <div className="w-full">
           <div className="bg-white rounded-[32px] border border-slate-200/90 shadow-[0_4px_24px_rgba(0,0,0,0.02)] p-6 sm:p-8 md:p-10 space-y-5">
-            {/* ═════════════════════════ FORM FIELDS ═════════════════════════ */}
             <div className="space-y-4 md:space-y-5 animate-in fade-in duration-200">
-              {/* Search HN Bar (ช่องค้นหา HN จากระบบ HIS) */}
+              {/* Search HN Bar (โหมดสร้างเคส) */}
               {!isEditMode && (
                 <div className="flex justify-end space-y-2">
                   <div className="flex flex-col sm:flex-row gap-3">
@@ -435,14 +359,14 @@ function DonorCaseFormContent() {
                           }
                         }}
                         placeholder="กรอกเลข HN เพื่อดึงข้อมูล"
-                        className="w-full h-11 px-5 bg-white border border-slate-200/90 rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-all"
+                        className={PILL_INPUT_CLS}
                       />
                     </div>
                     <button
                       type="button"
                       onClick={() => handleSearchPatient()}
                       disabled={searchingPatient}
-                      className="px-6 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm shrink-0 disabled:opacity-50 active:scale-[0.98]"
+                      className="px-6 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm shrink-0 disabled:opacity-50 active:scale-[0.98] cursor-pointer"
                     >
                       {searchingPatient ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -467,7 +391,7 @@ function DonorCaseFormContent() {
                     onChange={(e) => setHn(e.target.value)}
                     placeholder="เช่น 66012345"
                     disabled={isEditMode}
-                    className={pillInputCls}
+                    className={isEditMode ? DISABLED_PILL_INPUT_CLS : PILL_INPUT_CLS}
                   />
                 </div>
                 <div>
@@ -479,7 +403,7 @@ function DonorCaseFormContent() {
                     value={cid}
                     onChange={(e) => setCid(e.target.value)}
                     placeholder="13 หลัก"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
                 <div>
@@ -491,12 +415,12 @@ function DonorCaseFormContent() {
                     value={fullname}
                     onChange={(e) => setFullname(e.target.value)}
                     placeholder="ชื่อ-สกุล ผู้ป่วย"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
               </div>
 
-              {/* Row 2: สาเหตุการเสียชีวิต (50%) & icd10 (50%) */}
+              {/* Row 2: สาเหตุการเสียชีวิต & icd10 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -507,7 +431,7 @@ function DonorCaseFormContent() {
                     value={deathtext}
                     onChange={(e) => setDeathtext(e.target.value)}
                     placeholder="ระบุสาเหตุการเสียชีวิต"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
 
@@ -520,11 +444,12 @@ function DonorCaseFormContent() {
                     value={icd10}
                     onChange={(e) => setIcd10(e.target.value)}
                     placeholder="เช่น I21.9, I61.9"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
               </div>
-              {/* Row 3: braincardiac (25%) | potential (25%) | chkpotential (25%) | wardtotc (25%) */}
+
+              {/* Row 3: braincardiac | potential | chkpotential | wardtotc */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -534,10 +459,7 @@ function DonorCaseFormContent() {
                     value={braincardiac}
                     onChange={setBraincardiac}
                     placeholder="-- เลือกประเภทการเสียชีวิต --"
-                    options={[
-                      { value: 1, label: "Brain Death" },
-                      { value: 2, label: "Cardiac Death" },
-                    ]}
+                    options={DEATH_TYPE_OPTIONS}
                   />
                 </div>
 
@@ -548,10 +470,7 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={potential}
                     onChange={setPotential}
-                    options={[
-                      { value: 3, label: "Yes" },
-                      { value: 4, label: "No" },
-                    ]}
+                    options={POTENTIAL_OPTIONS}
                   />
                 </div>
 
@@ -562,10 +481,7 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={chkpotential}
                     onChange={setChkpotential}
-                    options={[
-                      { value: 5, label: "Evaluated" },
-                      { value: 6, label: "Not Evaluated" },
-                    ]}
+                    options={CHK_POTENTIAL_OPTIONS}
                   />
                 </div>
 
@@ -576,15 +492,12 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={wardtotc}
                     onChange={setWardtotc}
-                    options={[
-                      { value: 7, label: "แจ้ง TC แล้ว" },
-                      { value: 8, label: "ไม่ได้แจ้ง" },
-                    ]}
+                    options={WARD_TO_TC_OPTIONS}
                   />
                 </div>
               </div>
 
-              {/* Row 3.1: เหตุผลที่ไม่ได้ประเมิน (Full width) */}
+              {/* Row 3.1: เหตุผลที่ไม่ได้ประเมิน */}
               <div>
                 <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
                   เหตุผลที่ไม่ได้ประเมิน (commentnonchk)
@@ -594,11 +507,11 @@ function DonorCaseFormContent() {
                   value={commentnonchk}
                   onChange={(e) => setCommentnonchk(e.target.value)}
                   placeholder="ระบุเหตุผล เช่น เสียชีวิตก่อนทีมเข้าถึง..."
-                  className={pillInputCls}
+                  className={PILL_INPUT_CLS}
                 />
               </div>
 
-              {/* Row 4: negotiate (25%) | negotiate_succ (25%) | commentnonego (50%) */}
+              {/* Row 4: negotiate | negotiate_succ | commentnonego */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -607,10 +520,7 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={negotiate}
                     onChange={setNegotiate}
-                    options={[
-                      { value: 9, label: "เจรจาแล้ว" },
-                      { value: 10, label: "ยังไม่เจรจา" },
-                    ]}
+                    options={NEGOTIATE_OPTIONS}
                   />
                 </div>
 
@@ -619,18 +529,15 @@ function DonorCaseFormContent() {
                     negotiate_succ
                   </label>
                   <CustomSelect
-                    value={negotiate_succ}
+                    value={negotiateSucc}
                     onChange={(val) => {
-                      setNegotiate_succ(val);
+                      setNegotiateSucc(val);
                       if (val === 12 || val === 2) {
-                        setGeteye(14); // ถ้าเจรจาไม่สำเร็จ ให้ปรับเป็นจัดเก็บไม่ได้อัตโนมัติ
-                        setEyetotal(15); // และจำนวนดวงตาเป็นไม่ได้เก็บ
+                        setGeteye(14);
+                        setEyetotal(15);
                       }
                     }}
-                    options={[
-                      { value: 11, label: "สำเร็จ" },
-                      { value: 12, label: "ไม่สำเร็จ" },
-                    ]}
+                    options={NEGOTIATE_SUCC_OPTIONS}
                   />
                 </div>
 
@@ -643,12 +550,12 @@ function DonorCaseFormContent() {
                     value={commentnonego}
                     onChange={(e) => setCommentnonego(e.target.value)}
                     placeholder="ระบุสาเหตุหรือหมายเหตุการเจรจา..."
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
               </div>
 
-              {/* Row 5: geteye (25%) & geteye (eyetotal 25%) & commetnonnego (50%) */}
+              {/* Row 5: geteye | eyetotal | commentnoget */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
                 <div className="md:col-span-1">
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -657,10 +564,7 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={geteye}
                     onChange={setGeteye}
-                    options={[
-                      { value: 13, label: "จัดเก็บได้" },
-                      { value: 14, label: "จัดเก็บไม่ได้" },
-                    ]}
+                    options={GET_EYE_OPTIONS}
                   />
                 </div>
 
@@ -671,11 +575,7 @@ function DonorCaseFormContent() {
                   <CustomSelect
                     value={eyetotal}
                     onChange={setEyetotal}
-                    options={[
-                      { value: 15, label: "ไม่ได้เก็บ" },
-                      { value: 16, label: "1 ดวง" },
-                      { value: 17, label: "2 ดวง" },
-                    ]}
+                    options={EYE_TOTAL_OPTIONS}
                   />
                 </div>
 
@@ -688,12 +588,12 @@ function DonorCaseFormContent() {
                     value={commentnoget}
                     onChange={(e) => setCommentnoget(e.target.value)}
                     placeholder="ระบุสาเหตุที่จัดเก็บไม่ได้..."
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
               </div>
 
-              {/* Row 6: negotiate_staff (50%) & geteye_staff (50%) */}
+              {/* Row 6: negotiate_staff & geteye_staff */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -701,10 +601,10 @@ function DonorCaseFormContent() {
                   </label>
                   <input
                     type="text"
-                    value={negotiate_staff}
-                    onChange={(e) => setNegotiate_staff(e.target.value)}
+                    value={negotiateStaff}
+                    onChange={(e) => setNegotiateStaff(e.target.value)}
                     placeholder="ชื่อ-สกุล เจ้าหน้าที่ผู้เจรจา"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
 
@@ -714,38 +614,32 @@ function DonorCaseFormContent() {
                   </label>
                   <input
                     type="text"
-                    value={geteye_staff}
-                    onChange={(e) => setGeteye_staff(e.target.value)}
+                    value={geteyeStaff}
+                    onChange={(e) => setGeteyeStaff(e.target.value)}
                     placeholder="ชื่อ-สกุล แพทย์/เจ้าหน้าที่ผู้จัดเก็บ"
-                    className={pillInputCls}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
               </div>
 
-              {/* Row 7: firststaff (50%) & firsttime (50%) */}
+              {/* Row 7: firststaff & firsttime */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div>
                   <div className="flex items-center justify-between mb-1.5 pl-1">
                     <label className="block text-xs md:text-sm font-semibold text-slate-400">
-                      ชื่อผู้บันทึกข้อมูล (firststaff) <span className="text-rose-500">*</span>
+                      ชื่อผู้บันทึกข้อมูล (firststaff)
                     </label>
-                    {user?.name && (
-                      <button
-                        type="button"
-                        onClick={() => setFirststaff(user.name)}
-                        className="text-[11px] text-sky-500 hover:text-sky-600 font-medium hover:underline transition-colors cursor-pointer"
-                        title="คลิกเพื่อใส่ชื่อของคุณเป็นผู้บันทึก"
-                      >
-                        ใช้ชื่อฉัน ({user.name})
-                      </button>
-                    )}
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {isEditMode ? "ไม่สามารถแก้ไขได้" : "ดึงจากผู้เข้าสู่ระบบอัตโนมัติ"}
+                    </span>
                   </div>
                   <input
                     type="text"
-                    value={firststaff}
-                    onChange={(e) => setFirststaff(e.target.value)}
-                    placeholder="ระบุชื่อเจ้าหน้าที่ผู้รับเรื่องแรกรับ"
-                    className={`${pillInputCls}${!firststaff.trim() || firststaff.trim() === "-" ? " border-rose-300 focus:border-rose-400 focus:ring-rose-100" : ""}`}
+                    value={displayFirststaff}
+                    disabled
+                    readOnly
+                    placeholder={isEditMode ? "-" : "ดึงชื่อจากผู้เข้าสู่ระบบอัตโนมัติ"}
+                    className={DISABLED_PILL_INPUT_CLS}
                   />
                 </div>
 
@@ -757,21 +651,21 @@ function DonorCaseFormContent() {
                     <button
                       type="button"
                       onClick={() => setFirsttime(formatToLocalDateTimeInput())}
-                      className="text-[11px] text-sky-500 hover:text-sky-600 font-medium hover:underline transition-colors"
+                      className="text-[11px] text-sky-500 hover:text-sky-600 font-medium hover:underline transition-colors cursor-pointer"
                     >
                       ใช้วันเวลาปัจจุบัน
                     </button>
                   </div>
-                  <input
-                    type="datetime-local"
+                  <DateTimePicker
                     value={firsttime}
-                    onChange={(e) => setFirsttime(e.target.value)}
-                    className={pillInputCls}
+                    onChange={setFirsttime}
+                    placeholder="เลือกวันและเวลาแรกรับ"
                   />
                 </div>
               </div>
             </div>
-            {/* ── Footer Actions ── */}
+
+            {/* Footer Actions */}
             <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-3 sm:gap-4">
               <button
                 type="button"
@@ -787,7 +681,11 @@ function DonorCaseFormContent() {
                   type="button"
                   disabled={submitting || isSendingMoph || caseIsComplete === 0}
                   onClick={handleSendMophFromForm}
-                  title={caseIsComplete === 0 && caseMissingFields.length > 0 ? `ข้อมูลยังไม่ครบถ้วน ไม่สามารถส่งได้ (ขาด: ${caseMissingFields.join(", ")})` : undefined}
+                  title={
+                    caseIsComplete === 0 && caseMissingFields.length > 0
+                      ? `ข้อมูลยังไม่ครบถ้วน ไม่สามารถส่งได้ (ขาด: ${caseMissingFields.join(", ")})`
+                      : undefined
+                  }
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
                 >
                   {isSendingMoph ? (
@@ -798,7 +696,9 @@ function DonorCaseFormContent() {
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>{caseStatus === 2 ? "ส่ง สธ. (MOPH) ซ้ำ" : "ส่งข้อมูลไป MOPH"}</span>
+                      <span>
+                        {caseStatus === 2 ? "ส่ง สธ. (MOPH) ซ้ำ" : "ส่งข้อมูลไป MOPH"}
+                      </span>
                     </>
                   )}
                 </button>
@@ -817,7 +717,7 @@ function DonorCaseFormContent() {
                   </>
                 ) : (
                   <>
-                    <Save className="w-4 h-4 " />
+                    <Save className="w-4 h-4" />
                     <span>{isEditMode ? "บันทึกการแก้ไข" : "บันทึกข้อมูล"}</span>
                   </>
                 )}

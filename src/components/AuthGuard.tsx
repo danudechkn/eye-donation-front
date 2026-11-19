@@ -1,58 +1,34 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { clearSession } from "@/lib/cookies";
 import {
-  getCookie,
-  setCookie,
-  setSessionExpiry,
-  getSessionExpiry,
-  isSessionExpired,
-  clearSession,
-} from "@/lib/cookies";
+  hasAuthCallbackParams,
+  logoutFromBackend,
+  notifyAuthChange,
+  processAuthCallback,
+} from "@/lib/auth";
 import { useAuth } from "@/context/AuthContext";
-import type { AuthUser } from "@/types";
+import { useIsClient } from "@/hooks/useIsClient";
+
+const WARNING_MS = 5 * 60 * 1000; // เตือนก่อน session หมดอายุ 5 นาที
 
 // ============================================================
-// Session Toast — แสดงแถบเตือนที่ด้านบนเมื่อ session ใกล้หมด
+// Session Warning Toast
 // ============================================================
 
-const WARNING_MS = 5 * 60 * 1000; // เตือนก่อน 5 นาที
-
-function SessionWarningToast({
-  expiresAt,
-  onExpired,
-}: {
-  expiresAt: number;
-  onExpired: () => void;
-}) {
-  const [remaining, setRemaining] = useState<number>(expiresAt - Date.now());
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const left = expiresAt - Date.now();
-      if (left <= 0) {
-        clearInterval(interval);
-        onExpired();
-      } else {
-        setRemaining(left);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [expiresAt, onExpired]);
-
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
+function SessionWarningToast({ remainingMs }: { remainingMs: number }) {
+  const minutes = Math.floor(remainingMs / 60000);
+  const seconds = Math.floor((remainingMs % 60000) / 1000);
   const timeStr =
-    minutes > 0
-      ? `${minutes} นาที ${seconds} วินาที`
-      : `${seconds} วินาที`;
+    minutes > 0 ? `${minutes} นาที ${seconds} วินาที` : `${seconds} วินาที`;
 
   return (
     <div
       role="alert"
       className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-between gap-3 bg-amber-500 text-white px-5 py-3 shadow-lg"
-      style={{ fontFamily: "var(--font-prompt, sans-serif)", animation: "slideDown 0.3s ease" }}
+      style={{ fontFamily: "var(--font-prompt, sans-serif)" }}
     >
       <div className="flex items-center gap-2 text-sm font-medium">
         <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,18 +40,18 @@ function SessionWarningToast({
           />
         </svg>
         <span>
-          Session ของคุณจะหมดอายุใน{" "}
-          <strong>{timeStr}</strong>
-          {" "}— กรุณาบันทึกงานและ login ใหม่
+          Session ของคุณจะหมดอายุใน <strong>{timeStr}</strong> — กรุณาบันทึกงานและ login ใหม่
         </span>
       </div>
-      <span className="text-xs text-amber-100 font-light shrink-0">ระบบจะ logout อัตโนมัติ</span>
+      <span className="text-xs text-amber-100 font-light shrink-0">
+        ระบบจะ logout อัตโนมัติ
+      </span>
     </div>
   );
 }
 
 // ============================================================
-// Expired Modal — แสดงเมื่อ session หมดอายุแล้ว
+// Session Expired Modal
 // ============================================================
 
 function SessionExpiredModal({ onRedirect }: { onRedirect: () => void }) {
@@ -100,8 +76,9 @@ function SessionExpiredModal({ onRedirect }: { onRedirect: () => void }) {
           Session ของคุณหมดอายุแล้ว กรุณา login ใหม่เพื่อใช้งานระบบต่อไป
         </p>
         <button
+          type="button"
           onClick={onRedirect}
-          className="w-full bg-gradient-to-r from-[#0284c7] to-[#10b981] text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity"
+          className="w-full bg-gradient-to-r from-[#0284c7] to-[#10b981] text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
         >
           ไปหน้า Login
         </button>
@@ -114,229 +91,82 @@ function SessionExpiredModal({ onRedirect }: { onRedirect: () => void }) {
 // AuthGuard
 // ============================================================
 
-export function AuthGuard({ children }: { children: React.ReactNode }) {
+export function AuthGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { setUser } = useAuth();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
-  const [showWarning, setShowWarning] = useState(false);
+  const isClient = useIsClient();
+  const { isAuthenticated, sessionExpiresAt } = useAuth();
+
+  const [isProcessingCallback, setIsProcessingCallback] = useState(false);
   const [showExpiredModal, setShowExpiredModal] = useState(false);
-  const [expiresAt, setExpiresAt] = useState<number>(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [warningRemainingMs, setWarningRemainingMs] = useState<number | null>(null);
 
-  // ---- session expiry polling (ทุก 30 วินาที) ----
+  const hasCallback = isClient && (hasAuthCallbackParams() || isProcessingCallback);
+  const isWarningActive =
+    warningRemainingMs !== null && warningRemainingMs <= WARNING_MS;
+
+  // ---- จัดการ OAuth callback / ตรวจสอบสิทธิ์การเข้าใช้งาน ----
   useEffect(() => {
-    if (!authorized) return;
+    if (!isClient) return;
 
-    const checkSession = () => {
-      const expiry = getSessionExpiry();
-      if (expiry === null) return;
+    if (hasAuthCallbackParams()) {
+      let mounted = true;
+      void Promise.resolve().then(async () => {
+        if (mounted) setIsProcessingCallback(true);
+        await processAuthCallback({
+          allowCodeOnlySession: true,
+          context: "AuthGuard",
+        });
+        if (mounted) setIsProcessingCallback(false);
+      });
+      return () => {
+        mounted = false;
+      };
+    }
 
-      if (Date.now() >= expiry) {
-        setShowWarning(false);
+    if (isAuthenticated || isProcessingCallback) {
+      return;
+    }
+
+    if (!showExpiredModal) {
+      router.replace("/login");
+    }
+  }, [isClient, pathname, isAuthenticated, isProcessingCallback, showExpiredModal, router]);
+
+  // ---- ตรวจสอบวันหมดอายุของ Session และนับถอยหลังเตือนก่อนหมดอายุ ----
+  useEffect(() => {
+    if (!isClient || !isAuthenticated || sessionExpiresAt === null) return;
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const evaluateSession = () => {
+      const left = sessionExpiresAt - Date.now();
+      if (left <= 0) {
+        void logoutFromBackend();
         clearSession();
+        notifyAuthChange();
+        setWarningRemainingMs(null);
         setShowExpiredModal(true);
-        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (intervalId) clearInterval(intervalId);
         return;
       }
 
-      const left = expiry - Date.now();
       if (left <= WARNING_MS) {
-        setExpiresAt(expiry);
-        setShowWarning(true);
+        setWarningRemainingMs(left);
       } else {
-        setShowWarning(false);
+        setWarningRemainingMs(null);
       }
     };
 
-    checkSession();
-    intervalRef.current = setInterval(checkSession, 30_000);
+    const initialTimer = setTimeout(evaluateSession, 0);
+    const tickMs = isWarningActive ? 1000 : 30_000;
+    intervalId = setInterval(evaluateSession, tickMs);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearTimeout(initialTimer);
+      if (intervalId) clearInterval(intervalId);
     };
-  }, [authorized]);
-
-  // ---- initial auth check ----
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      const searchParams = url.searchParams;
-      const hashString = window.location.hash.startsWith("#")
-        ? window.location.hash.substring(1)
-        : window.location.hash;
-      const hashParams = new URLSearchParams(hashString);
-
-      const checkParams = (params: URLSearchParams) => {
-        return !!(
-          params.get("token") ||
-          params.get("moph_token") ||
-          params.get("access_token") ||
-          params.get("id_token") ||
-          params.get("profile") ||
-          params.get("provider_profile") ||
-          params.get("data") ||
-          params.get("user")
-        );
-      };
-
-      const hasAuthParams = checkParams(hashParams) || checkParams(searchParams);
-
-      if (hasAuthParams) {
-        const getParam = (key: string) => searchParams.get(key) || hashParams.get(key);
-        let token =
-          getParam("token") ||
-          getParam("moph_token") ||
-          getParam("access_token") ||
-          getParam("id_token") ||
-          "";
-
-        const rawProfile =
-          getParam("profile") ||
-          getParam("provider_profile") ||
-          getParam("data") ||
-          getParam("user");
-
-        let providerProfile: any = null;
-        if (rawProfile) {
-          try {
-            const unescaped = decodeURIComponent(rawProfile);
-            if (unescaped.startsWith("{") || unescaped.startsWith("[")) {
-              providerProfile = JSON.parse(unescaped);
-            } else if (rawProfile.startsWith("{") || rawProfile.startsWith("[")) {
-              providerProfile = JSON.parse(rawProfile);
-            } else {
-              providerProfile = JSON.parse(atob(rawProfile));
-            }
-          } catch (e) {
-            console.error("Error parsing provider profile in AuthGuard:", e);
-          }
-        }
-
-        if (!token && providerProfile?.organization?.[0]?.moph_access_token_idp) {
-          token = providerProfile.organization[0].moph_access_token_idp;
-        }
-
-        const firstName =
-          providerProfile?.firstname_th ||
-          providerProfile?.first_name_th ||
-          providerProfile?.first_name ||
-          "";
-        const lastName =
-          providerProfile?.lastname_th ||
-          providerProfile?.last_name_th ||
-          providerProfile?.last_name ||
-          "";
-        const title =
-          providerProfile?.title_th ||
-          providerProfile?.pre_name_th ||
-          "";
-        const providerFullName = [title, firstName, lastName].filter(Boolean).join(" ").trim();
-
-        const name =
-          providerFullName ||
-          providerProfile?.name ||
-          providerProfile?.fullname ||
-          providerProfile?.display_name ||
-          getParam("name") ||
-          "";
-
-        const cid =
-          providerProfile?.cid ||
-          providerProfile?.provider_id ||
-          getParam("cid") ||
-          "";
-
-        const role =
-          providerProfile?.organization?.[0]?.position_type ||
-          providerProfile?.profession_name_th ||
-          providerProfile?.profession_name ||
-          getParam("role") ||
-          "พยาบาลประสานงาน";
-
-        const hospcode =
-          providerProfile?.organization?.[0]?.hcode ||
-          providerProfile?.organization?.[0]?.hospcode ||
-          providerProfile?.hospcode ||
-          getParam("hospcode") ||
-          "10664";
-
-        if (!token && (cid || name || providerProfile)) {
-          const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-            .replace(/=/g, "")
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_");
-          const payload = btoa(
-            unescape(
-              encodeURIComponent(
-                JSON.stringify({
-                  cid: cid || "unknown",
-                  name: name || "เจ้าหน้าที่",
-                  role: role || "staff",
-                  hospcode: hospcode || "10664",
-                  exp: Math.floor(Date.now() / 1000) + 3600,
-                })
-              )
-            )
-          )
-            .replace(/=/g, "")
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_");
-          token = `${header}.${payload}.moph_session_sig`;
-        }
-
-        if (token) {
-          setCookie("moph_token", token);
-          sessionStorage.removeItem("moph_token");
-          localStorage.removeItem("moph_token");
-        }
-
-        if (providerProfile) {
-          sessionStorage.setItem("provider_profile", JSON.stringify(providerProfile));
-          localStorage.removeItem("provider_profile");
-        }
-
-        if (token || cid || name) {
-          const userObj: AuthUser = {
-            cid,
-            name: name || "เจ้าหน้าที่",
-            role,
-            hospcode,
-            providerId: providerProfile?.provider_id || "",
-            loginAt: new Date().toISOString(),
-          };
-          setCookie("eye_donation_user", JSON.stringify(userObj));
-          setSessionExpiry(); // ← รีเซ็ต session clock เมื่อ auth callback ใหม่
-          setUser(userObj); // ← อัปเดต AuthContext
-          sessionStorage.setItem("eye_donation_user", JSON.stringify(userObj));
-          localStorage.removeItem("eye_donation_user");
-          window.dispatchEvent(new Event("storage"));
-        }
-
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setAuthorized(true);
-        return;
-      }
-
-      // ตรวจสอบ cookie
-      const token =
-        getCookie("moph_token") ||
-        getCookie("token");
-
-      if (token) {
-        if (isSessionExpired()) {
-          clearSession();
-          setAuthorized(false);
-          setShowExpiredModal(true);
-        } else {
-          setAuthorized(true);
-        }
-      } else {
-        setAuthorized(false);
-        router.replace("/login");
-      }
-    }
-  }, [pathname, router]);
+  }, [isClient, isAuthenticated, sessionExpiresAt, isWarningActive]);
 
   const handleExpiredRedirect = useCallback(() => {
     setShowExpiredModal(false);
@@ -347,31 +177,25 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <SessionExpiredModal onRedirect={handleExpiredRedirect} />;
   }
 
-  if (authorized === false) return null;
-
-  if (authorized === null) {
+  if (!isClient || hasCallback) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-slate-50/50">
-        <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-3 text-sm text-slate-500 font-medium">กำลังตรวจสอบสิทธิ์การเข้าใช้งาน...</p>
+        <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="mt-3 text-sm text-slate-500 font-medium">
+          กำลังตรวจสอบสิทธิ์การเข้าใช้งาน...
+        </p>
       </div>
     );
   }
 
+  if (!isAuthenticated) return null;
+
   return (
     <>
-      {showWarning && expiresAt > 0 && (
-        <SessionWarningToast
-          expiresAt={expiresAt}
-          onExpired={() => {
-            clearSession();
-            setShowWarning(false);
-            setShowExpiredModal(true);
-          }}
-        />
+      {warningRemainingMs !== null && warningRemainingMs > 0 && (
+        <SessionWarningToast remainingMs={warningRemainingMs} />
       )}
       {children}
     </>
   );
 }
-

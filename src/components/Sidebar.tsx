@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -11,51 +11,27 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import { getCookie, deleteCookie } from "@/hooks/useApi";
+import { useAuth } from "@/context/AuthContext";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(true);
-  const [currentUser, setCurrentUser] = useState<{ name?: string; role?: string } | null>(null);
-
-  useEffect(() => {
-    const loadUser = () => {
-      if (typeof window !== "undefined") {
-        const saved =
-          getCookie("eye_donation_user") ||
-          sessionStorage.getItem("eye_donation_user") ||
-          localStorage.getItem("eye_donation_user");
-        if (saved) {
-          try {
-            setCurrentUser(JSON.parse(saved));
-          } catch { }
-        }
-      }
-    };
-
-    loadUser();
-    window.addEventListener("storage", loadUser);
-    return () => window.removeEventListener("storage", loadUser);
-  }, [pathname]);
-
 
   const isCasesActive = pathname.startsWith("/cases");
-  const isDashboardActive =
-    pathname === "/dashborad" || pathname === "/dashboard" || pathname === "/";
+  const isDashboardActive = pathname === "/dashboard" || pathname === "/";
 
   return (
     <aside
-      className={`relative bg-white border-r border-slate-200/80 h-screen flex flex-col justify-between select-none shadow-
-        [1px_0_10px_rgba(0,0,0,0.02)] shrink-0 z-30 transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-[68px]"
+      className={`relative bg-white border-r border-slate-200/80 h-screen flex flex-col justify-between select-none shadow-[1px_0_10px_rgba(0,0,0,0.02)] shrink-0 z-30 transition-all duration-300 ease-in-out ${isOpen ? "w-72" : "w-[68px]"
         }`}
     >
       {/* Toggle Button */}
       <button
+        type="button"
         onClick={() => setIsOpen((v) => !v)}
-        title={isOpen ? "off" : "on"}
-        className="absolute -right-3.5 top-[calc(80px/2-14px)] z-50 w-7 h-7 bg-white border border-slate-200 text-slate-500 
-        hover:text-sky-600 hover:border-sky-300 rounded-full flex items-center justify-center shadow-md transition-all 
-        hover:scale-110 active:scale-95"
+        title={isOpen ? "ย่อแถบเมนู" : "ขยายแถบเมนู"}
+        className="absolute -right-3.5 top-[calc(80px/2-14px)] z-50 w-7 h-7 bg-white border border-slate-200 text-slate-500 hover:text-sky-600 hover:border-sky-300 rounded-full flex items-center justify-center shadow-md transition-all hover:scale-110 active:scale-95 cursor-pointer"
       >
         {isOpen ? (
           <PanelLeftClose className="w-3.5 h-3.5" />
@@ -87,7 +63,6 @@ export function Sidebar() {
 
         {/* Main Navigation */}
         <nav className="p-3 space-y-1 overflow-y-auto flex-1">
-          {/* Dashboard */}
           <Link
             href="/dashboard"
             title={!isOpen ? "Dashboard" : undefined}
@@ -101,10 +76,9 @@ export function Sidebar() {
               className={`w-4 h-4 shrink-0 ${isDashboardActive ? "text-sky-600" : "text-slate-400"
                 }`}
             />
-            {isOpen && <span>Dashboard</span>}
+            {isOpen && <span>EyeDonation Dashboard</span>}
           </Link>
 
-          {/* Index - Donor Cases */}
           <Link
             href="/cases"
             title={!isOpen ? "บันทึกเคสบริจาค" : undefined}
@@ -118,7 +92,7 @@ export function Sidebar() {
               className={`w-4 h-4 shrink-0 ${isCasesActive ? "text-sky-600" : "text-slate-400"
                 }`}
             />
-            {isOpen && <span>บันทึกเคสบริจาค</span>}
+            {isOpen && <span>บันทึกเคสบริจาคดวงตา</span>}
           </Link>
         </nav>
       </div>
@@ -139,26 +113,17 @@ export function Sidebar() {
               </div>
               <div className="truncate">
                 <p className="text-xs font-bold text-slate-800 truncate">
-                  {currentUser?.name || "พยาบาลประสานงาน"}
+                  {user?.name || "พยาบาลประสานงาน"}
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
-                  {currentUser?.role === "admin" ? "ผู้ดูแลระบบ" : "ศูนย์ดวงตา"}
+                  {user?.role === "admin" ? "ผู้ดูแลระบบ" : "ศูนย์ดวงตา"}
                 </p>
               </div>
             </div>
           )}
           <button
-            onClick={() => {
-              if (typeof window !== "undefined") {
-                deleteCookie("moph_token");
-                deleteCookie("token");
-                deleteCookie("eye_donation_user");
-                deleteCookie("provider_profile");
-                sessionStorage.clear();
-                localStorage.clear();
-                window.location.href = "/login";
-              }
-            }}
+            type="button"
+            onClick={logout}
             title="ออกจากระบบ"
             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
           >

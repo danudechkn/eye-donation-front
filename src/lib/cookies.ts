@@ -1,6 +1,22 @@
-﻿// ============================================================
+// ============================================================
 // Cookie Utilities
 // ============================================================
+
+import { warnIfJwtMissingUserName } from "@/lib/jwt";
+
+/**
+ * เก็บ token ไว้เฉพาะในหน่วยความจำชั่วคราว (In-Memory) ระหว่างหน้าเว็บเปิดอยู่
+ * เพื่อไม่ให้เก็บลง client cookie / storage ซ้ำกับ HttpOnly Cookie ของ Backend
+ */
+let inMemoryToken: string | null = null;
+
+export function setInMemoryToken(token: string | null): void {
+  inMemoryToken = token;
+}
+
+export function getInMemoryToken(): string | null {
+  return inMemoryToken;
+}
 
 export function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -28,14 +44,14 @@ export function deleteCookie(name: string): void {
 // Session Expiry Helpers
 // ============================================================
 
-/** Session duration in milliseconds (configurable via env, default 60 min) */
+/** Session duration in milliseconds (default 12 hours to match Backend HttpOnly Cookie) */
 export const SESSION_DURATION_MS =
-  Number(process.env.NEXT_PUBLIC_SESSION_DURATION_MS) || 30 * 60 * 1000;
+  Number(process.env.NEXT_PUBLIC_SESSION_DURATION_MS) || 12 * 60 * 60 * 1000;
 
 /** Stamp an expiry timestamp (epoch ms) into a cookie right after login. */
 export function setSessionExpiry(): void {
   const expiresAt = Date.now() + SESSION_DURATION_MS;
-  setCookie("eye_session_expires", String(expiresAt));
+  setCookie("eye_session_expires", String(expiresAt), 1);
 }
 
 /** Return the expiry timestamp (epoch ms), or null if not set. */
@@ -53,37 +69,45 @@ export function isSessionExpired(): boolean {
   return Date.now() >= expiry;
 }
 
-/** Wipe every auth-related cookie and storage entry. */
+const LEGACY_KEYS = [
+  "moph_token",
+  "token",
+  "eye_donation_user",
+  "provider_profile",
+  "eye_session_expires",
+  "code",
+  "moph_code",
+  "client_id",
+  "moph_client_id",
+  "client_secret",
+  "moph_client_secret",
+  "redirect_uri",
+  "moph_redirect_uri",
+] as const;
+
+/** ล้าง Cookie ฝั่ง Frontend และล้างค่าเก่าที่อาจค้างอยู่ใน storage ทั้งหมด */
 export function clearSession(): void {
-  deleteCookie("moph_token");
-  deleteCookie("token");
-  deleteCookie("eye_donation_user");
-  deleteCookie("provider_profile");
-  deleteCookie("eye_session_expires");
-  if (typeof sessionStorage !== "undefined") sessionStorage.clear();
-  if (typeof localStorage !== "undefined") localStorage.clear();
+  inMemoryToken = null;
+
+  for (const key of LEGACY_KEYS) {
+    deleteCookie(key);
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(key);
+    }
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(key);
+    }
+  }
 }
 
-/** Build auth headers from cookie/URL token. */
-export function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+/** Build auth headers (ใช้ควบคู่กับ HttpOnly Cookie ผ่าน credentials: "include") */
+export function getAuthHeaders(
+  extraHeaders: Record<string, string> = {},
+): Record<string, string> {
   const headers: Record<string, string> = { ...extraHeaders };
-  if (typeof window !== "undefined") {
-    let token = getCookie("moph_token") || getCookie("token") || null;
-
-    if (!token && window.location.hash) {
-      const hashStr = window.location.hash.startsWith("#")
-        ? window.location.hash.substring(1)
-        : window.location.hash;
-      const p = new URLSearchParams(hashStr);
-      token = p.get("token") || p.get("moph_token") || p.get("access_token");
-    }
-    if (!token && window.location.search) {
-      const p = new URLSearchParams(window.location.search);
-      token =
-        p.get("token") || p.get("moph_token") || p.get("access_token") || p.get("id_token");
-    }
-
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (typeof window !== "undefined" && inMemoryToken) {
+    warnIfJwtMissingUserName(inMemoryToken, "API Request");
+    headers["Authorization"] = `Bearer ${inMemoryToken}`;
   }
   return headers;
 }

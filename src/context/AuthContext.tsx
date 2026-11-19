@@ -1,14 +1,24 @@
-﻿"use client";
+"use client";
 
 import {
   createContext,
   useContext,
-  useState,
   useEffect,
   useCallback,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { getCookie, clearSession, setSessionExpiry } from "@/lib/cookies";
+import { useRouter } from "next/navigation";
+import { clearSession, setCookie, setSessionExpiry } from "@/lib/cookies";
+import {
+  AUTH_UNAUTHORIZED_EVENT,
+  getAuthSnapshot,
+  getServerAuthSnapshot,
+  logoutFromBackend,
+  notifyAuthChange,
+  subscribeAuthStore,
+} from "@/lib/auth";
+import { useIsClient } from "@/hooks/useIsClient";
 import type { AuthUser } from "@/types";
 
 // ============================================================
@@ -17,70 +27,74 @@ import type { AuthUser } from "@/types";
 
 interface AuthContextValue {
   user: AuthUser | null;
+  isAuthenticated: boolean;
+  sessionExpiresAt: number | null;
   isLoading: boolean;
   /** ตั้งค่า user หลัง login สำเร็จ */
   setUser: (user: AuthUser) => void;
-  /** Logout: ล้าง session แล้ว redirect */
+  /** Logout: เรียก POST /api/auth/logout ล้าง HttpOnly Cookie + ล้าง session แล้ว redirect */
   logout: () => void;
   /** รีเซ็ต session clock (ต่ออายุ) */
   renewSession: () => void;
 }
 
 // ============================================================
-// Context
+// Context & Provider
 // ============================================================
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// ============================================================
-// Provider
-// ============================================================
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+  const isClient = useIsClient();
+  const { user, isAuthenticated, sessionExpiresAt } = useSyncExternalStore(
+    subscribeAuthStore,
+    getAuthSnapshot,
+    getServerAuthSnapshot,
+  );
 
-  // โหลด user จาก cookie เมื่อ mount
+  // รับสัญญาณ 401/403 จาก API layer เพื่อ redirect ด้วย Next.js Router
   useEffect(() => {
-    const raw = getCookie("eye_donation_user");
-    if (raw) {
-      try {
-        setUserState(JSON.parse(raw));
-      } catch {
-        setUserState(null);
-      }
-    }
-    setIsLoading(false);
-
-    // ฟัง storage event เผื่อ tab อื่น login/logout
-    const onStorage = () => {
-      const updated = getCookie("eye_donation_user");
-      if (updated) {
-        try { setUserState(JSON.parse(updated)); } catch { setUserState(null); }
-      } else {
-        setUserState(null);
+    const onUnauthorized = () => {
+      if (window.location.pathname !== "/login") {
+        router.replace("/login");
       }
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, onUnauthorized);
+    };
+  }, [router]);
 
   const setUser = useCallback((u: AuthUser) => {
-    setUserState(u);
+    setCookie("eye_donation_user", JSON.stringify(u), 1);
+    notifyAuthChange();
   }, []);
 
   const logout = useCallback(() => {
+    void logoutFromBackend();
     clearSession();
-    setUserState(null);
-    window.location.href = "/login";
-  }, []);
+    notifyAuthChange();
+    router.replace("/login");
+  }, [router]);
 
   const renewSession = useCallback(() => {
     setSessionExpiry();
+    notifyAuthChange();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, setUser, logout, renewSession }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        sessionExpiresAt,
+        isLoading: !isClient,
+        setUser,
+        logout,
+        renewSession,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

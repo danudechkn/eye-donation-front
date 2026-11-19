@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getAuthHeaders, clearSession } from "@/lib/cookies";
+import {
+  logoutFromBackend,
+  notifyAuthChange,
+  notifyUnauthorized,
+  syncBackendAuthCookie,
+} from "@/lib/auth";
 import type {
   DonorCaseItem,
   DonorCasePayload,
@@ -15,7 +21,7 @@ import type {
   MophPreviewResponse,
 } from "@/types";
 
-// re-export so existing imports from "@/hooks/useApi" still work
+// Re-export shared types & cookie helpers for convenience
 export type {
   DonorCaseItem,
   DonorCasePayload,
@@ -48,82 +54,93 @@ export {
 } from "@/lib/cookies";
 
 // ============================================================
-// API URL
+// API Core
 // ============================================================
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// ============================================================
-// Core fetch helper
-// ============================================================
-
-async function apiFetch(endpoint: string, options: RequestInit = {}) {
+async function apiFetch<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<ApiResponse<T>> {
   const res = await fetch(`${API_URL}${endpoint}`, {
     ...options,
+    credentials: "include",
     headers: { ...getAuthHeaders(), ...options.headers },
   });
 
   if (res.status === 401 || res.status === 403) {
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      void logoutFromBackend();
       clearSession();
-      window.location.href = "/login";
+      notifyAuthChange();
+      notifyUnauthorized();
     }
   }
 
-  return res.json();
+  return (await res.json()) as ApiResponse<T>;
+}
+
+async function apiMutate<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<ApiResponse<T>> {
+  const result = await apiFetch<T>(endpoint, options);
+  if (result && !result.success && result.message) {
+    throw new Error(result.message);
+  }
+  return result;
 }
 
 // ============================================================
-// Standalone api object (for direct use in hooks/components)
+// API Client
 // ============================================================
 
 export const api = {
+  /** ซิงค์ JWT กับ Backend เพื่อเซ็ต HttpOnly Cookie (POST /api/auth/login) */
+  login: (token: string) => syncBackendAuthCookie(token),
+
+  /** สั่งลบ HttpOnly Cookie ที่ Backend (POST /api/auth/logout) */
+  logout: () => logoutFromBackend(),
+
   getCases: (params: DonorCaseParams = {}) => {
     const query = new URLSearchParams();
     if (params.search) query.set("search", params.search);
     if (params.page) query.set("page", String(params.page));
     if (params.limit) query.set("limit", String(params.limit));
-    return apiFetch(`/donor-cases?${query.toString()}`, {
-      cache: "no-store",
-    }) as Promise<ApiResponse<{ data: DonorCaseItem[]; pagination: PaginationInfo }>>;
+    return apiFetch<{ data: DonorCaseItem[]; pagination: PaginationInfo }>(
+      `/donor-cases?${query.toString()}`,
+      { cache: "no-store" },
+    );
   },
 
   getCaseById: (id: number | string) =>
-    apiFetch(`/donor-cases/${id}`, { cache: "no-store" }) as Promise<ApiResponse<DonorCaseItem>>,
+    apiFetch<DonorCaseItem>(`/donor-cases/${id}`, { cache: "no-store" }),
 
   searchPatient: (hn: string) =>
-    apiFetch(`/deceased-patients?hn=${encodeURIComponent(hn)}`, {
+    apiFetch<PatientInfo>(`/deceased-patients?hn=${encodeURIComponent(hn)}`, {
       cache: "no-store",
-    }) as Promise<ApiResponse<PatientInfo>>,
+    }),
 
-  createCase: async (data: DonorCasePayload | Record<string, unknown>): Promise<ApiResponse<DonorCaseItem>> => {
-    const result = (await apiFetch(`/deceased-patients`, {
+  createCase: (data: DonorCasePayload | Record<string, unknown>) =>
+    apiMutate<DonorCaseItem>(`/deceased-patients`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    })) as any;
-    if (result && !result.success && result.message) throw new Error(result.message);
-    return result;
-  },
+    }),
 
-  updateCase: async (
+  updateCase: (
     id: number | string,
     data: Partial<DonorCasePayload> | Record<string, unknown>,
-  ): Promise<ApiResponse<DonorCaseItem>> => {
-    const result = (await apiFetch(`/donor-cases/${id}`, {
+  ) =>
+    apiMutate<DonorCaseItem>(`/donor-cases/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    })) as any;
-    if (result && !result.success && result.message) throw new Error(result.message);
-    return result;
-  },
+    }),
 
-  deleteCase: async (id: number | string): Promise<ApiResponse<null>> => {
-    const result = (await apiFetch(`/donor-cases/${id}`, { method: "DELETE" })) as any;
-    if (result && !result.success && result.message) throw new Error(result.message);
-    return result;
-  },
+  deleteCase: (id: number | string) =>
+    apiMutate<null>(`/donor-cases/${id}`, { method: "DELETE" }),
 
   getStatistics: (params: StatisticsParams = {}) => {
     const query = new URLSearchParams();
@@ -132,108 +149,41 @@ export const api = {
     if (params.startDate) query.set("startDate", params.startDate);
     if (params.endDate) query.set("endDate", params.endDate);
     const qs = query.toString();
-    return apiFetch(`/statistics${qs ? `?${qs}` : ""}`, {
+    return apiFetch<StatisticsData>(`/statistics${qs ? `?${qs}` : ""}`, {
       cache: "no-store",
-    }) as Promise<ApiResponse<StatisticsData>>;
+    });
   },
 
-  sendToMoph: async (id: number | string): Promise<ApiResponse<MophSendResponse>> => {
-    const result = (await apiFetch(`/donor-cases/${id}/send-moph`, {
+  sendToMoph: (id: number | string) =>
+    apiMutate<MophSendResponse>(`/donor-cases/send-moph/${id}`, {
       method: "POST",
-    })) as any;
-    if (result && !result.success && result.message) throw new Error(result.message);
-    return result;
-  },
+    }),
 
-  previewMoph: async (id: number | string): Promise<ApiResponse<MophPreviewResponse>> => {
-    const result = (await apiFetch(`/donor-cases/${id}/preview-moph`, {
+  previewMoph: (id: number | string) =>
+    apiMutate<MophPreviewResponse>(`/donor-cases/${id}/preview-moph`, {
       method: "GET",
       cache: "no-store",
-    })) as any;
-    if (result && !result.success && result.message) throw new Error(result.message);
-    return result;
-  },
+    }),
 };
-
-// ============================================================
-// useApiRequest hook (backward-compat)
-// ============================================================
-
-export default function useApiRequest() {
-  const apiRequest = async (
-    endpoint: string,
-    method = "GET",
-    body: Record<string, unknown> | null = null,
-  ) => {
-    const headers = getAuthHeaders({ "Content-Type": "application/json" });
-    const options: RequestInit = { method, headers, cache: "no-store" };
-    if (body && method !== "GET") options.body = JSON.stringify(body);
-
-    const res = await fetch(`${API_URL}${endpoint}`, options);
-    const data = await res.json();
-
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-          clearSession();
-          window.location.href = "/login";
-        }
-      }
-      throw new Error(data?.message || "Request failed");
-    }
-    return data;
-  };
-
-  const getCases = (params: DonorCaseParams = {}) => {
-    const query = new URLSearchParams();
-    if (params.search) query.set("search", params.search);
-    if (params.page) query.set("page", String(params.page));
-    if (params.limit) query.set("limit", String(params.limit));
-    return apiRequest(`/donor-cases?${query.toString()}`);
-  };
-
-  const getCaseById = (id: number | string) => apiRequest(`/donor-cases/${id}`);
-  const createCase = (value: DonorCasePayload | Record<string, unknown>) =>
-    apiRequest("/deceased-patients", "POST", value);
-  const updateCase = (id: number | string, value: Partial<DonorCasePayload> | Record<string, unknown>) =>
-    apiRequest(`/donor-cases/${id}`, "PUT", value);
-  const deleteCase = (id: number | string) => apiRequest(`/donor-cases/${id}`, "DELETE");
-  const searchPatient = (hn: string) =>
-    apiRequest(`/deceased-patients?hn=${encodeURIComponent(hn)}`);
-  const getStatistics = (params: StatisticsParams = {}) => {
-    const query = new URLSearchParams();
-    if (params.year) query.set("year", String(params.year));
-    if (params.month && params.month !== "all") query.set("month", String(params.month));
-    if (params.startDate) query.set("startDate", params.startDate);
-    if (params.endDate) query.set("endDate", params.endDate);
-    const qs = query.toString();
-    return apiRequest(`/statistics${qs ? `?${qs}` : ""}`);
-  };
-
-  const sendToMoph = (id: number | string) =>
-    apiRequest(`/donor-cases/${id}/send-moph`, "POST");
-  const previewMoph = (id: number | string) =>
-    apiRequest(`/donor-cases/${id}/preview-moph`, "GET");
-
-  return { getCases, getCaseById, createCase, updateCase, deleteCase, searchPatient, getStatistics, sendToMoph, previewMoph };
-}
 
 // ============================================================
 // Custom Hook: useDonorCases
 // ============================================================
 
 export function useDonorCases(params: DonorCaseParams = {}) {
+  const { search, page, limit } = params;
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+  const queryKey = `${search ?? ""}|${page ?? ""}|${limit ?? ""}|${reloadTrigger}`;
+
   const [cases, setCases] = useState<DonorCaseItem[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo>({
     total: 0,
-    page: params.page || 1,
-    limit: params.limit || 10,
+    page: page || 1,
+    limit: limit || 10,
     totalPages: 1,
   });
-  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [reloadTrigger, setReloadTrigger] = useState<number>(0);
-  const { search, page, limit } = params;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -247,23 +197,33 @@ export function useDonorCases(params: DonorCaseParams = {}) {
         } else {
           setCases([]);
         }
-        setLoading(false);
+        setError(null);
+        setLoadedKey(queryKey);
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
         setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดข้อมูล");
-        setLoading(false);
+        setLoadedKey(queryKey);
       });
-    return () => { isMounted = false; };
-  }, [search, page, limit, reloadTrigger]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [search, page, limit, queryKey]);
 
   const refetch = useCallback(() => {
-    setLoading(true);
     setError(null);
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  return { cases, pagination, loading, error, refetch, setCases };
+  return {
+    cases,
+    pagination,
+    loading: loadedKey !== queryKey,
+    error,
+    refetch,
+    setCases,
+  };
 }
 
 // ============================================================
@@ -271,36 +231,46 @@ export function useDonorCases(params: DonorCaseParams = {}) {
 // ============================================================
 
 export function useDonorCase(id: number | string | null | undefined) {
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+  const queryKey = id ? `${id}|${reloadTrigger}` : null;
+
   const [caseData, setCaseData] = useState<DonorCaseItem | null>(null);
-  const [loading, setLoading] = useState<boolean>(Boolean(id));
   const [error, setError] = useState<string | null>(null);
-  const [reloadTrigger, setReloadTrigger] = useState<number>(0);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !queryKey) return;
     let isMounted = true;
     api
       .getCaseById(id)
       .then((res) => {
         if (!isMounted) return;
         setCaseData(res.success && res.data ? res.data : null);
-        setLoading(false);
+        setError(null);
+        setLoadedKey(queryKey);
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
         setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการดึงข้อมูลเคส");
-        setLoading(false);
+        setLoadedKey(queryKey);
       });
-    return () => { isMounted = false; };
-  }, [id, reloadTrigger]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, queryKey]);
 
   const refetch = useCallback(() => {
-    setLoading(true);
     setError(null);
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  return { caseData, loading, error, refetch };
+  return {
+    caseData,
+    loading: Boolean(queryKey) && loadedKey !== queryKey,
+    error,
+    refetch,
+  };
 }
 
 // ============================================================
@@ -308,35 +278,44 @@ export function useDonorCase(id: number | string | null | undefined) {
 // ============================================================
 
 export function useStatistics(params: StatisticsParams = {}) {
-  const [stats, setStats] = useState<StatisticsData | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadTrigger, setReloadTrigger] = useState<number>(0);
   const { year, month, startDate, endDate } = params;
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+  const queryKey = `${year ?? ""}|${month ?? ""}|${startDate ?? ""}|${endDate ?? ""}|${reloadTrigger}`;
+
+  const [stats, setStats] = useState<StatisticsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
     api
       .getStatistics({ year, month, startDate, endDate })
       .then((res) => {
         if (!isMounted) return;
         setStats(res.success && res.data ? res.data : null);
-        setLoading(false);
+        setError(null);
+        setLoadedKey(queryKey);
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
         setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการโหลดสถิติ");
-        setLoading(false);
+        setLoadedKey(queryKey);
       });
-    return () => { isMounted = false; };
-  }, [year, month, startDate, endDate, reloadTrigger]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [year, month, startDate, endDate, queryKey]);
 
   const refetch = useCallback(() => {
-    setLoading(true);
     setError(null);
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  return { stats, loading, error, refetch };
+  return {
+    stats,
+    loading: loadedKey !== queryKey,
+    error,
+    refetch,
+  };
 }
