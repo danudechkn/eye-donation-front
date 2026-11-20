@@ -52,6 +52,8 @@ const AUTH_CALLBACK_KEYS = [
  */
 export async function syncBackendAuthCookie(token: string): Promise<void> {
   if (!token || !API_BASE_URL) return;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
   try {
     await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: "POST",
@@ -61,9 +63,12 @@ export async function syncBackendAuthCookie(token: string): Promise<void> {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ token }),
+      signal: controller.signal,
     });
   } catch (err) {
     console.warn("[Auth] ไม่สามารถซิงค์ HttpOnly Cookie กับ Backend ได้:", err);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -72,13 +77,18 @@ export async function syncBackendAuthCookie(token: string): Promise<void> {
  */
 export async function logoutFromBackend(): Promise<void> {
   if (!API_BASE_URL) return;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
   try {
     await fetch(`${API_BASE_URL}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
+      signal: controller.signal,
     });
   } catch (err) {
     console.warn("[Auth] ไม่สามารถเรียก /api/auth/logout ที่ Backend ได้:", err);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -245,6 +255,15 @@ export async function processAuthCallback(
   }
 
   if (!window.location.search && !window.location.hash) {
+    const snapshot = getAuthSnapshot();
+    if (snapshot.isAuthenticated) {
+      return {
+        handled: false,
+        authenticated: true,
+        token: getInMemoryToken() || "",
+        user: snapshot.user,
+      };
+    }
     return { handled: false, authenticated: false, token: "", user: null };
   }
 
@@ -292,18 +311,11 @@ export async function processAuthCallback(
       });
     }
 
-    // 2. ล้าง cookie/storage เก่าที่อาจค้างอยู่ แล้วเก็บ token ไว้ใน memory + สั่ง Backend เซ็ต HttpOnly Cookie
+    // 2. ล้าง session เก่า แล้วบันทึก session ใหม่ลง cookie และ memory ทันที
     clearSession();
     warnIfJwtMissingUserName(token, context);
     setInMemoryToken(token);
 
-    // ล้าง query/hash ออกจากแถบ URL ทันทีเพื่อไม่ให้ข้อมูลค้างบน URL
-    window.history.replaceState({}, document.title, window.location.pathname);
-
-    // รอให้ Backend เซ็ต HttpOnly Cookie (token และ moph_token) ให้เสร็จก่อนเริ่มยิง API อื่น
-    await syncBackendAuthCookie(token);
-
-    // 3. เก็บเฉพาะ Cookie สำหรับ UI (eye_donation_user และ eye_session_expires)
     const userObj: AuthUser = {
       cid,
       name: name || "เจ้าหน้าที่",
@@ -316,6 +328,14 @@ export async function processAuthCallback(
     setCookie("eye_donation_user", JSON.stringify(userObj), 1);
     setSessionExpiry();
     notifyAuthChange();
+
+    // 3. รอให้ Backend เซ็ต HttpOnly Cookie (token และ moph_token)
+    await syncBackendAuthCookie(token);
+
+    // 4. ล้าง query/hash ออกจากแถบ URL เพื่อความปลอดภัยและความสะอาดตา
+    if (typeof window !== "undefined" && (window.location.search || window.location.hash)) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     return {
       handled: true,

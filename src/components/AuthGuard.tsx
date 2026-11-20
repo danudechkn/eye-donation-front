@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, type ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { clearSession } from "@/lib/cookies";
 import {
   hasAuthCallbackParams,
@@ -92,16 +92,15 @@ function SessionExpiredModal({ onRedirect }: { onRedirect: () => void }) {
 // ============================================================
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
   const router = useRouter();
   const isClient = useIsClient();
   const { isAuthenticated, sessionExpiresAt } = useAuth();
 
-  const [isProcessingCallback, setIsProcessingCallback] = useState(false);
   const [showExpiredModal, setShowExpiredModal] = useState(false);
   const [warningRemainingMs, setWarningRemainingMs] = useState<number | null>(null);
 
-  const hasCallback = isClient && (hasAuthCallbackParams() || isProcessingCallback);
+  const hasCallbackParams = isClient && hasAuthCallbackParams();
+  const isChecking = !isClient || hasCallbackParams;
   const isWarningActive =
     warningRemainingMs !== null && warningRemainingMs <= WARNING_MS;
 
@@ -110,28 +109,21 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     if (!isClient) return;
 
     if (hasAuthCallbackParams()) {
-      let mounted = true;
-      void Promise.resolve().then(async () => {
-        if (mounted) setIsProcessingCallback(true);
-        await processAuthCallback({
-          allowCodeOnlySession: true,
-          context: "AuthGuard",
-        });
-        if (mounted) setIsProcessingCallback(false);
+      void processAuthCallback({
+        allowCodeOnlySession: true,
+        context: "AuthGuard",
+      }).then((result) => {
+        if (!result.authenticated && !showExpiredModal) {
+          router.replace("/login");
+        }
       });
-      return () => {
-        mounted = false;
-      };
-    }
-
-    if (isAuthenticated || isProcessingCallback) {
       return;
     }
 
-    if (!showExpiredModal) {
+    if (!isAuthenticated && !showExpiredModal) {
       router.replace("/login");
     }
-  }, [isClient, pathname, isAuthenticated, isProcessingCallback, showExpiredModal, router]);
+  }, [isClient, isAuthenticated, showExpiredModal, router]);
 
   // ---- ตรวจสอบวันหมดอายุของ Session และนับถอยหลังเตือนก่อนหมดอายุ ----
   useEffect(() => {
@@ -177,7 +169,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     return <SessionExpiredModal onRedirect={handleExpiredRedirect} />;
   }
 
-  if (!isClient || hasCallback) {
+  if (isChecking) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-slate-50/50">
         <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
