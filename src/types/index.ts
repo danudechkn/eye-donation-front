@@ -22,6 +22,7 @@ export interface DonorCaseItem {
   commentnoget?: string | null;
   negotiate_staff?: string | null;
   geteye_staff?: string | null;
+  geteye_place?: string | null;
   firststaff: string;
   fristtime?: string | null;
   status?: number;
@@ -33,7 +34,7 @@ export interface DonorCaseItem {
 
 export interface DonorCasePayload {
   hn: string;
-  fullname?: string;
+  fullname?: string | null;
   cid?: string | null;
   deathtext?: string | null;
   icd10?: string | null;
@@ -50,6 +51,7 @@ export interface DonorCasePayload {
   commentnoget?: string | null;
   negotiate_staff?: string | null;
   geteye_staff?: string | null;
+  geteye_place?: string | null;
   firststaff?: string;
   firsttime?: string | null;
   status?: number;

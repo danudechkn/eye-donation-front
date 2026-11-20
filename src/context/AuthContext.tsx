@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const setUser = useCallback((u: AuthUser) => {
-    setCookie("eye_donation_user", JSON.stringify(u), 1);
+    setCookie("eye_donation_user", JSON.stringify(u));
     notifyAuthChange();
   }, []);
 

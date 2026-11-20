@@ -10,7 +10,9 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronsUpDown,
 } from "lucide-react";
+import { Avatar, Badge, Dropdown, Label, Separator } from "@heroui/react";
 import { useAuth } from "@/context/AuthContext";
 
 export function Sidebar() {
@@ -99,37 +101,93 @@ export function Sidebar() {
 
       {/* Footer / Profile */}
       <div
-        className={`border-t border-slate-100 bg-slate-50/50 shrink-0 transition-all duration-300 ${isOpen ? "p-4" : "p-2"
+        className={`border-t border-slate-100 bg-slate-50/40 shrink-0 transition-all duration-300 ${isOpen ? "p-3" : "p-2"
           }`}
       >
-        <div
-          className={`flex items-center p-2 rounded-xl bg-white border border-slate-200/70 shadow-sm transition-all duration-300 ${isOpen ? "justify-between" : "justify-center"
-            }`}
-        >
-          {isOpen && (
+        <Dropdown>
+          <Dropdown.Trigger
+            aria-label="เมนูผู้ใช้งาน"
+            className={`group w-full flex items-center rounded-2xl bg-white border border-slate-200/70 hover:border-sky-200 hover:bg-sky-50/30 shadow-xs hover:shadow-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 cursor-pointer ${isOpen ? "px-2.5 py-2 justify-between gap-2.5" : "p-1.5 justify-center"
+              }`}
+          >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-xs shadow-sm shrink-0">
-                TC
-              </div>
-              <div className="truncate">
+              <Badge.Anchor className="shrink-0">
+                <Avatar size="sm" color="accent" variant="soft" className="w-9 h-9">
+                  <Avatar.Fallback className="bg-gradient-to-br from-sky-500 to-teal-500 text-white font-bold text-xs tracking-wide">
+                  </Avatar.Fallback>
+                </Avatar>
+                <Badge
+                  color="success"
+                  placement="bottom-right"
+                  size="sm"
+                  className="w-2.5 h-2.5 min-w-0 p-0 ring-2 ring-white"
+                />
+              </Badge.Anchor>
+
+              {isOpen && (
+                <div className="min-w-0 text-left">
+                  <p className="text-xs font-bold text-slate-800 truncate leading-snug">
+                    {user?.name || "พยาบาลประสานงาน"}
+                  </p>
+                  <p className="text-[11px] text-slate-400 truncate leading-snug">
+                    {user?.role === "admin" ? "ผู้ดูแลระบบ" : user?.role || "ศูนย์ดวงตา"}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {isOpen && (
+              <ChevronsUpDown className="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors shrink-0" />
+            )}
+          </Dropdown.Trigger>
+
+          <Dropdown.Popover
+            placement={isOpen ? "top start" : "right bottom"}
+            offset={8}
+            className="min-w-[236px] rounded-2xl border border-slate-200/80 bg-white shadow-xl p-1.5 z-50"
+          >
+            <div className="px-2.5 py-2 flex items-center gap-2.5">
+              <Avatar size="sm" color="accent" variant="soft" className="w-9 h-9 shrink-0">
+                <Avatar.Fallback className="bg-gradient-to-br from-sky-500 to-teal-500 text-white font-bold text-xs tracking-wide">
+                </Avatar.Fallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-slate-800 truncate">
                   {user?.name || "พยาบาลประสานงาน"}
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
-                  {user?.role === "admin" ? "ผู้ดูแลระบบ" : "ศูนย์ดวงตา"}
+                  {user?.role === "admin" ? "ผู้ดูแลระบบ" : user?.role || "ศูนย์ดวงตา"}
                 </p>
+                {user?.hospcode && (
+                  <p className="text-[10px] text-sky-600/80 font-medium truncate mt-0.5">
+                    รหัสหน่วยงาน: {user.hospcode}
+                  </p>
+                )}
               </div>
             </div>
-          )}
-          <button
-            type="button"
-            onClick={logout}
-            title="ออกจากระบบ"
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
+
+            <Separator className="my-1 bg-slate-100" />
+
+            <Dropdown.Menu
+              aria-label="การจัดการบัญชีผู้ใช้งาน"
+              onAction={(key) => {
+                if (key === "logout") logout();
+              }}
+            >
+              <Dropdown.Item
+                id="logout"
+                textValue="ออกจากระบบ"
+                variant="danger"
+                className="rounded-xl px-2.5 py-2 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-2.5 outline-none"
+              >
+                <LogOut className="w-4 h-4 text-rose-500 shrink-0" />
+                <Label className="text-xs font-semibold text-rose-600 cursor-pointer">
+                  ออกจากระบบ
+                </Label>
+              </Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown.Popover>
+        </Dropdown>
       </div>
     </aside>
   );

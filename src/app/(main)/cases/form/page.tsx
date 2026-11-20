@@ -72,6 +72,7 @@ function DonorCaseFormContent() {
   const [commentnoget, setCommentnoget] = useState("");
   const [negotiateStaff, setNegotiateStaff] = useState("");
   const [geteyeStaff, setGeteyeStaff] = useState("");
+  const [geteyePlace, setGeteyePlace] = useState("");
 
   const [wardtotc, setWardtotc] = useState(1);
   const [commentnonchk, setCommentnonchk] = useState("");
@@ -98,7 +99,7 @@ function DonorCaseFormContent() {
           const d = res.data;
           setHn(d.hn || "");
           setFullname(d.fullname || "");
-          setCid(d.cid || "");
+          setCid(d.cid ? String(d.cid).replace(/\D/g, "").slice(0, 13) : "");
           setDeathtext(d.deathtext || "");
           setIcd10(d.icd10 || "");
           setBraincardiac(d.braincardiac != null ? Number(d.braincardiac) : null);
@@ -114,6 +115,7 @@ function DonorCaseFormContent() {
           setEyetotal(Number(d.eyetotal) ?? 2);
           setCommentnoget(d.commentnoget || "");
           setGeteyeStaff(d.geteye_staff || "");
+          setGeteyePlace(d.geteye_place || "");
           setFirststaff(d.firststaff?.trim() || "-");
           setCaseStatus(d.status !== undefined ? Number(d.status) : 1);
           setCaseIsComplete(
@@ -149,6 +151,8 @@ function DonorCaseFormContent() {
 
   // โหมดแก้ไข: แสดงค่า firststaff เดิม | โหมดสร้างเคส: แสดงชื่อผู้ใช้งานที่ Login (Backend ดึงจาก JWT ตอนบันทึก)
   const displayFirststaff = isEditMode ? firststaff : (user?.name || "");
+  const trimmedCid = cid.trim();
+  const isCidIncomplete = trimmedCid.length > 0 && !/^\d{13}$/.test(trimmedCid);
 
   // ── Search HIS Patient ────────────────────────────────────────────────────
   const handleSearchPatient = async (targetHn?: string) => {
@@ -172,7 +176,9 @@ function DonorCaseFormContent() {
         setHn(foundHn);
         setSearchHn(foundHn);
         setFullname(String(p.fullname || name || "พบข้อมูลผู้ป่วย"));
-        if (p.cid || p.citizencardno) setCid(String(p.cid || p.citizencardno));
+        if (p.cid || p.citizencardno) {
+          setCid(String(p.cid || p.citizencardno).replace(/\D/g, "").slice(0, 13));
+        }
         if (p.deathtext || p.diagdetail) setDeathtext(String(p.deathtext || p.diagdetail));
         if (p.icd10 || p.icdcode) setIcd10(String(p.icd10 || p.icdcode));
         if (p.braincardiac) setBraincardiac(Number(p.braincardiac));
@@ -208,6 +214,11 @@ function DonorCaseFormContent() {
   const handleSaveCase = async () => {
     if (!hn.trim()) {
       showToast("error", "กรุณาระบุเลข HN ผู้ป่วยก่อนบันทึกข้อมูล");
+      return;
+    }
+
+    if (isCidIncomplete) {
+      showToast("error", `กรุณากรอกเลขบัตรประชาชน (CID) ให้ครบ 13 หลัก (ปัจจุบัน ${trimmedCid.length}/13 หลัก)`);
       return;
     }
 
@@ -253,6 +264,7 @@ function DonorCaseFormContent() {
         commentnoget: commentnoget.trim() || null,
         negotiate_staff: negotiateStaff.trim() || null,
         geteye_staff: geteyeStaff.trim() || null,
+        geteye_place: geteyePlace.trim() || null,
         firsttime: firsttime ? new Date(firsttime).toISOString() : null,
       };
 
@@ -390,21 +402,43 @@ function DonorCaseFormContent() {
                     value={hn}
                     onChange={(e) => setHn(e.target.value)}
                     placeholder="เช่น 66012345"
-                    disabled={isEditMode}
-                    className={isEditMode ? DISABLED_PILL_INPUT_CLS : PILL_INPUT_CLS}
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
-                    เลขบัตรประชาชน (CID)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5 px-1">
+                    <label className="block text-xs md:text-sm font-semibold text-slate-400">
+                      เลขบัตรประชาชน (CID)
+                    </label>
+                    {trimmedCid.length > 0 && (
+                      <span
+                        className={`text-[11px] font-semibold ${
+                          isCidIncomplete ? "text-rose-500" : "text-emerald-600"
+                        }`}
+                      >
+                        {trimmedCid.length}/13 หลัก
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={13}
                     value={cid}
-                    onChange={(e) => setCid(e.target.value)}
+                    onChange={(e) => setCid(e.target.value.replace(/\D/g, "").slice(0, 13))}
                     placeholder="13 หลัก"
-                    className={PILL_INPUT_CLS}
+                    aria-invalid={isCidIncomplete}
+                    className={
+                      isCidIncomplete
+                        ? "w-full h-11 px-5 bg-white border border-rose-400 rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition-all"
+                        : PILL_INPUT_CLS
+                    }
                   />
+                  {isCidIncomplete && (
+                    <p className="mt-1.5 pl-2 text-xs font-medium text-rose-500">
+                      กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก (ขาดอีก {13 - trimmedCid.length} หลัก)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
@@ -622,15 +656,15 @@ function DonorCaseFormContent() {
                 </div>
               </div>
 
-              {/* Row 7: firststaff & firsttime */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              {/* Row 7: firststaff, geteye_place & firsttime */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                 <div>
-                  <div className="flex items-center justify-between mb-1.5 pl-1">
-                    <label className="block text-xs md:text-sm font-semibold text-slate-400">
+                  <div className="flex items-center justify-between gap-2 mb-1.5 pl-1">
+                    <label className="block text-xs md:text-sm font-semibold text-slate-400 truncate">
                       ชื่อผู้บันทึกข้อมูล (firststaff)
                     </label>
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      {isEditMode ? "ไม่สามารถแก้ไขได้" : "ดึงจากผู้เข้าสู่ระบบอัตโนมัติ"}
+                    <span className="text-[11px] text-slate-400 font-medium shrink-0">
+                      {isEditMode ? "แก้ไขไม่ได้" : "อัตโนมัติ"}
                     </span>
                   </div>
                   <input
@@ -640,6 +674,19 @@ function DonorCaseFormContent() {
                     readOnly
                     placeholder={isEditMode ? "-" : "ดึงชื่อจากผู้เข้าสู่ระบบอัตโนมัติ"}
                     className={DISABLED_PILL_INPUT_CLS}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs md:text-sm font-semibold text-slate-400 mb-1.5 pl-1">
+                    สถานที่จัดเก็บ
+                  </label>
+                  <input
+                    type="text"
+                    value={geteyePlace}
+                    onChange={(e) => setGeteyePlace(e.target.value)}
+                    placeholder="เช่น ห้องผ่าตัด, ICU, ห้องเก็บศพ, บ้านผู้บริจาค"
+                    className={PILL_INPUT_CLS}
                   />
                 </div>
 
@@ -706,9 +753,14 @@ function DonorCaseFormContent() {
 
               <button
                 type="button"
-                disabled={submitting || isSendingMoph}
+                disabled={submitting || isSendingMoph || isCidIncomplete}
+                title={
+                  isCidIncomplete
+                    ? "กรุณากรอกเลขบัตรประชาชน (CID) ให้ครบ 13 หลักก่อนบันทึก"
+                    : undefined
+                }
                 onClick={handleSaveCase}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 cursor-pointer active:scale-[0.98]"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-2.5 bg-[#29b6f6] hover:bg-[#0288d1] text-white rounded-full text-sm font-semibold shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
               >
                 {submitting ? (
                   <>

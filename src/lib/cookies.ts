@@ -48,10 +48,10 @@ export function deleteCookie(name: string): void {
 export const SESSION_DURATION_MS =
   Number(process.env.NEXT_PUBLIC_SESSION_DURATION_MS) || 12 * 60 * 60 * 1000;
 
-/** Stamp an expiry timestamp (epoch ms) into a cookie right after login. */
+/** Stamp an expiry timestamp (epoch ms) into a Session Cookie right after login (หายเมื่อปิด Browser). */
 export function setSessionExpiry(): void {
   const expiresAt = Date.now() + SESSION_DURATION_MS;
-  setCookie("eye_session_expires", String(expiresAt), 1);
+  setCookie("eye_session_expires", String(expiresAt));
 }
 
 /** Return the expiry timestamp (epoch ms), or null if not set. */
@@ -83,6 +83,7 @@ const LEGACY_KEYS = [
   "moph_client_secret",
   "redirect_uri",
   "moph_redirect_uri",
+  "eye_last_activity",
 ] as const;
 
 /** ล้าง Cookie ฝั่ง Frontend และล้างค่าเก่าที่อาจค้างอยู่ใน storage ทั้งหมด */

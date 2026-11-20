@@ -325,7 +325,7 @@ export async function processAuthCallback(
       loginAt: new Date().toISOString(),
     };
 
-    setCookie("eye_donation_user", JSON.stringify(userObj), 1);
+    setCookie("eye_donation_user", JSON.stringify(userObj));
     setSessionExpiry();
     notifyAuthChange();
 
