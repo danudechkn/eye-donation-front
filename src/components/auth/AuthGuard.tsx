@@ -1,16 +1,29 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { clearSession } from "@/lib/cookies";
+import { usePathname, useRouter } from "next/navigation";
+import { clearSession, setCookie } from "@/lib/cookies";
 import {
+  fetchCurrentAuthRole,
   hasAuthCallbackParams,
   logoutFromBackend,
   notifyAuthChange,
   processAuthCallback,
 } from "@/lib/auth";
+import {
+  canAccessPathname,
+  getDefaultHomeRoute,
+  getEffectiveAppRole,
+} from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 import { useIsClient } from "@/hooks/useIsClient";
+import { useRoleRealtime } from "@/hooks/useRealtime";
+import {
+  IdleWarningModal,
+  SessionExpiredModal,
+  SessionWarningToast,
+} from "./SessionModals";
+import { PendingApprovalScreen } from "./PendingApprovalScreen";
 
 const WARNING_MS = 5 * 60 * 1000; // เตือนก่อน session หมดอายุ 5 นาที
 const IDLE_TIMEOUT_MS =
@@ -18,162 +31,33 @@ const IDLE_TIMEOUT_MS =
 const IDLE_COUNTDOWN_SEC = 60; // นับถอยหลัง 60 วินาทีก่อนออกจากระบบอัตโนมัติ
 const LAST_ACTIVITY_KEY = "eye_last_activity";
 
-// ============================================================
-// Session Warning Toast
-// ============================================================
-
-function SessionWarningToast({ remainingMs }: { remainingMs: number }) {
-  const minutes = Math.floor(remainingMs / 60000);
-  const seconds = Math.floor((remainingMs % 60000) / 1000);
-  const timeStr =
-    minutes > 0 ? `${minutes} นาที ${seconds} วินาที` : `${seconds} วินาที`;
-
-  return (
-    <div
-      role="alert"
-      className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-between gap-3 bg-amber-500 text-white px-5 py-3 shadow-lg"
-      style={{ fontFamily: "var(--font-prompt, sans-serif)" }}
-    >
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-          />
-        </svg>
-        <span>
-          Session ของคุณจะหมดอายุใน <strong>{timeStr}</strong> — กรุณาบันทึกงานและ login ใหม่
-        </span>
-      </div>
-      <span className="text-xs text-amber-100 font-light shrink-0">
-        ระบบจะ logout อัตโนมัติ
-      </span>
-    </div>
-  );
-}
-
-// ============================================================
-// Session Expired Modal
-// ============================================================
-
-function SessionExpiredModal({
-  reason,
-  onRedirect,
-}: {
-  reason: "expired" | "idle";
-  onRedirect: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div
-        className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center"
-        style={{ fontFamily: "var(--font-prompt, sans-serif)" }}
-      >
-        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-            />
-          </svg>
-        </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">
-          {reason === "idle" ? "ออกจากระบบอัตโนมัติ" : "Session หมดอายุ"}
-        </h2>
-        <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-          {reason === "idle"
-            ? "ไม่มีการใช้งานระบบเกินเวลาที่กำหนด เพื่อความปลอดภัยของข้อมูลผู้ป่วย กรุณาเข้าสู่ระบบใหม่อีกครั้ง"
-            : "Session ของคุณหมดอายุแล้ว กรุณา login ใหม่เพื่อใช้งานระบบต่อไป"}
-        </p>
-        <button
-          type="button"
-          onClick={onRedirect}
-          className="w-full bg-gradient-to-r from-[#0284c7] to-[#10b981] text-white font-semibold py-3 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          ไปหน้า Login
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Idle Warning Modal
-// ============================================================
-
-function IdleWarningModal({
-  secondsLeft,
-  onContinue,
-  onLogoutNow,
-}: {
-  secondsLeft: number;
-  onContinue: () => void;
-  onLogoutNow: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div
-        className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center"
-        style={{ fontFamily: "var(--font-prompt, sans-serif)" }}
-      >
-        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-        </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">ไม่มีการใช้งานระบบ</h2>
-        <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-          ระบบจะออกจากระบบอัตโนมัติใน{" "}
-          <strong className="text-amber-600 text-base">{secondsLeft} วินาที</strong>{" "}
-          เพื่อความปลอดภัยหากคุณลืมออกจากระบบ
-        </p>
-        <div className="flex flex-col sm:flex-row gap-2.5">
-          <button
-            type="button"
-            onClick={onLogoutNow}
-            className="w-full sm:w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2.5 rounded-xl transition-colors cursor-pointer"
-          >
-            ออกจากระบบ
-          </button>
-          <button
-            type="button"
-            onClick={onContinue}
-            className="w-full sm:w-1/2 bg-gradient-to-r from-[#0284c7] to-[#10b981] text-white font-semibold py-2.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
-          >
-            ใช้งานต่อ
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// AuthGuard
-// ============================================================
-
 export function AuthGuard({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
   const isClient = useIsClient();
-  const { isAuthenticated, sessionExpiresAt } = useAuth();
+  const { user, isAuthenticated, sessionExpiresAt } = useAuth();
 
   const [expiredReason, setExpiredReason] = useState<"expired" | "idle" | null>(null);
   const [warningRemainingMs, setWarningRemainingMs] = useState<number | null>(null);
   const [idleCountdownSec, setIdleCountdownSec] = useState<number | null>(null);
+  const [roleSynced, setRoleSynced] = useState(false);
+  const [recheckingRole, setRecheckingRole] = useState(false);
+  const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const lastActivityRef = useRef<number>(0);
 
   const showExpiredModal = expiredReason !== null;
   const hasCallbackParams = isClient && hasAuthCallbackParams();
   const isChecking = !isClient || hasCallbackParams;
+  const isAccessKnown =
+    roleSynced ||
+    (user?.appRole !== undefined &&
+      user?.userStatus !== undefined &&
+      user?.isActive !== undefined);
+  const effectiveStatus =
+    user?.userStatus ?? (user?.isActive ? "active" : "pending");
+  const isAccountActive = effectiveStatus === "active";
+  const appRole = getEffectiveAppRole(user);
+  const isRouteAllowed = canAccessPathname(pathname, appRole);
   const isWarningActive =
     warningRemainingMs !== null && warningRemainingMs <= WARNING_MS;
 
@@ -185,6 +69,88 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     setIdleCountdownSec(null);
     setExpiredReason(reason);
   }, []);
+
+  // ---- ซิงค์ appRole และ userStatus ล่าสุดจากฐานข้อมูล Backend (GET /api/auth/me) ----
+  useEffect(() => {
+    if (!isClient || !isAuthenticated || hasCallbackParams || !user) return;
+
+    let cancelled = false;
+    void fetchCurrentAuthRole().then((res) => {
+      if (cancelled) return;
+      if (
+        res &&
+        (res.appRole !== user.appRole ||
+          res.userStatus !== user.userStatus ||
+          res.isActive !== user.isActive)
+      ) {
+        setCookie(
+          "eye_donation_user",
+          JSON.stringify({
+            ...user,
+            appRole: res.appRole,
+            userStatus: res.userStatus,
+            isActive: res.isActive,
+          }),
+        );
+        notifyAuthChange();
+      }
+      setRoleSynced(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isClient, isAuthenticated, hasCallbackParams, user]);
+
+  // ---- รับแจ้งเตือนแบบ Real-time เมื่อ Admin เปลี่ยนสิทธิ์หรืออนุมัติบัญชีนี้ ----
+  const currentProviderId = user?.providerId || user?.cid;
+  useRoleRealtime(
+    currentProviderId,
+    () => {
+      if (!user) return;
+      void fetchCurrentAuthRole().then((res) => {
+        if (
+          res &&
+          (res.appRole !== user.appRole ||
+            res.userStatus !== user.userStatus ||
+            res.isActive !== user.isActive)
+        ) {
+          setCookie(
+            "eye_donation_user",
+            JSON.stringify({
+              ...user,
+              appRole: res.appRole,
+              userStatus: res.userStatus,
+              isActive: res.isActive,
+            }),
+          );
+          notifyAuthChange();
+        }
+        setRoleSynced(true);
+      });
+    },
+    isClient && isAuthenticated && !hasCallbackParams && Boolean(user),
+  );
+
+  // ---- ล็อกเส้นทาง URL ไม่ให้ข้ามสิทธิ์ (eye / organ / admin) ----
+  useEffect(() => {
+    if (!isClient || !isAuthenticated || hasCallbackParams || showExpiredModal) return;
+    if (!isAccessKnown || !isAccountActive) return;
+
+    if (!isRouteAllowed) {
+      router.replace(getDefaultHomeRoute(appRole));
+    }
+  }, [
+    isClient,
+    isAuthenticated,
+    hasCallbackParams,
+    showExpiredModal,
+    isAccessKnown,
+    isAccountActive,
+    isRouteAllowed,
+    appRole,
+    router,
+  ]);
 
   // ---- จัดการ OAuth callback / ตรวจสอบสิทธิ์การเข้าใช้งาน ----
   useEffect(() => {
@@ -324,6 +290,40 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     setIdleCountdownSec(null);
   }, []);
 
+  const handleRecheckRole = useCallback(async () => {
+    if (!user) return;
+    setRecheckingRole(true);
+    setPendingNotice(null);
+    try {
+      const res = await fetchCurrentAuthRole();
+      if (res) {
+        setCookie(
+          "eye_donation_user",
+          JSON.stringify({
+            ...user,
+            appRole: res.appRole,
+            userStatus: res.userStatus,
+            isActive: res.isActive,
+          }),
+        );
+        notifyAuthChange();
+        if (res.isActive) {
+          router.replace(getDefaultHomeRoute(res.appRole));
+        } else {
+          setPendingNotice(
+            res.userStatus === "suspended"
+              ? "บัญชีของคุณยังคงถูกระงับสิทธิ์ชั่วคราว กรุณาติดต่อผู้ดูแลระบบ"
+              : "บัญชีของคุณยังรอการอนุมัติสิทธิ์จากผู้ดูแลระบบ",
+          );
+        }
+      } else {
+        setPendingNotice("ไม่สามารถเชื่อมต่อเพื่อตรวจสอบสิทธิ์ได้ กรุณาลองใหม่");
+      }
+    } finally {
+      setRecheckingRole(false);
+    }
+  }, [user, router]);
+
   const handleManualLogoutNow = useCallback(() => {
     void logoutFromBackend();
     clearSession();
@@ -358,6 +358,34 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   }
 
   if (!isAuthenticated) return null;
+
+  // รอซิงค์สิทธิ์และสถานะการอนุมัติจากฐานข้อมูลก่อนแสดงเนื้อหาใดๆ
+  if (!isAccessKnown) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-slate-50/50">
+        <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="mt-3 text-sm text-slate-500 font-medium">
+          กำลังตรวจสอบสิทธิ์การเข้าใช้งาน...
+        </p>
+      </div>
+    );
+  }
+
+  // ยังไม่ได้รับการอนุมัติ (pending) หรือถูกระงับสิทธิ์ (suspended) → บล็อกไม่ให้เห็น Sidebar และข้อมูลใดๆ
+  if (!isAccountActive) {
+    return (
+      <PendingApprovalScreen
+        user={user}
+        status={effectiveStatus === "suspended" ? "suspended" : "pending"}
+        checking={recheckingRole}
+        notice={pendingNotice}
+        onRecheck={() => void handleRecheckRole()}
+        onLogout={handleManualLogoutNow}
+      />
+    );
+  }
+
+  if (!isRouteAllowed) return null;
 
   return (
     <>

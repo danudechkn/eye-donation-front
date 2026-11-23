@@ -5,7 +5,7 @@
 import {
   clearSession,
   getCookie,
-   getInMemoryToken,
+  getInMemoryToken,
   setCookie,
   setInMemoryToken,
   setSessionExpiry,
@@ -18,13 +18,14 @@ import {
   resolveCallbackAuth,
   warnIfJwtMissingUserName,
 } from "@/lib/jwt";
-import type { AuthUser } from "@/types";
+import type { AppRole, AuthUser, UserStatus } from "@/types";
+import { isValidAppRole } from "@/lib/roles";
 
 export const AUTH_CHANGE_EVENT = "eye-auth-change";
 export const AUTH_UNAUTHORIZED_EVENT = "eye-auth-unauthorized";
 
 export const MAIN_LOGIN_URL =
-  process.env.NEXT_PUBLIC_LOGIN_URL || "http://10.10.200.103:3578";
+  process.env.NEXT_PUBLIC_LOGIN_URL || "http://10.10.200.103:3577";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 /** Base origin ของ Backend (เช่น http://172.16.46.64:3002) สำหรับเรียก /api/auth/* */
@@ -47,26 +48,126 @@ const AUTH_CALLBACK_KEYS = [
 // Backend HttpOnly Cookie Sync (/api/auth/login & /api/auth/logout)
 // ============================================================
 
+export interface SyncBackendAuthProfile {
+  cid?: string;
+  providerId?: string;
+  name?: string;
+  role?: string;
+  hospcode?: string;
+}
+
+export interface SyncedAuthAccess {
+  appRole: AppRole;
+  userStatus: UserStatus;
+  isActive: boolean;
+}
+
+function parseUserStatus(rawStatus: unknown, isActiveFallback: boolean): UserStatus {
+  if (rawStatus === "pending" || rawStatus === "active" || rawStatus === "suspended") {
+    return rawStatus;
+  }
+  return isActiveFallback ? "active" : "pending";
+}
+
 /**
- * ส่ง JWT Token ไปให้ Backend เซ็ตเป็น HttpOnly Cookie (token และ moph_token)
+ * ส่ง JWT Token ไปให้ Backend เซ็ตเป็น HttpOnly Cookie (token) และคืนค่าสิทธิ์ + สถานะบัญชีจากฐานข้อมูล
  */
-export async function syncBackendAuthCookie(token: string): Promise<void> {
-  if (!token || !API_BASE_URL) return;
+export async function syncBackendAuthCookie(
+  token: string,
+  profile?: SyncBackendAuthProfile,
+): Promise<SyncedAuthAccess | null> {
+  if (!token || !API_BASE_URL) return null;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6000);
   try {
-    await fetch(`${API_BASE_URL}/api/auth/login`, {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({
+        token,
+        ...(profile ?? {}),
+      }),
       signal: controller.signal,
     });
+
+    if (res.ok) {
+      const json = (await res.json()) as {
+        appRole?: unknown;
+        userStatus?: unknown;
+        isActive?: unknown;
+        user?: { appRole?: unknown; userStatus?: unknown; isActive?: unknown };
+      };
+      const resolvedRole = json.appRole ?? json.user?.appRole;
+      const resolvedActive = Boolean(json.isActive ?? json.user?.isActive ?? false);
+      const resolvedStatus = parseUserStatus(
+        json.userStatus ?? json.user?.userStatus,
+        resolvedActive,
+      );
+      if (isValidAppRole(resolvedRole)) {
+        return {
+          appRole: resolvedRole,
+          userStatus: resolvedStatus,
+          isActive: resolvedStatus === "active",
+        };
+      }
+    }
+    return null;
   } catch (err) {
     console.warn("[Auth] ไม่สามารถซิงค์ HttpOnly Cookie กับ Backend ได้:", err);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * ดึงสิทธิ์และสถานะบัญชีล่าสุดของผู้ใช้งานปัจจุบันจาก Backend (GET /api/auth/me)
+ */
+export async function fetchCurrentAuthRole(): Promise<SyncedAuthAccess | null> {
+  if (!API_BASE_URL) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  try {
+    const headers: Record<string, string> = {};
+    const memToken = getInMemoryToken();
+    if (memToken) {
+      headers["Authorization"] = `Bearer ${memToken}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers,
+      signal: controller.signal,
+    });
+
+    if (!res.ok) return null;
+
+    const json = (await res.json()) as {
+      user?: { appRole?: unknown; userStatus?: unknown; isActive?: unknown };
+      data?: { appRole?: unknown; userStatus?: unknown; isActive?: unknown };
+    };
+    const role = json.user?.appRole ?? json.data?.appRole;
+    const isActive = Boolean(json.user?.isActive ?? json.data?.isActive ?? false);
+    const userStatus = parseUserStatus(
+      json.user?.userStatus ?? json.data?.userStatus,
+      isActive,
+    );
+    if (isValidAppRole(role)) {
+      return {
+        appRole: role,
+        userStatus,
+        isActive: userStatus === "active",
+      };
+    }
+    return null;
+  } catch {
+    return null;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -184,7 +285,7 @@ export function getAuthSnapshot(): AuthSnapshot {
 }
 
 export function subscribeAuthStore(callback: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
+  if (typeof window === "undefined") return () => { };
   window.addEventListener(AUTH_CHANGE_EVENT, callback);
   window.addEventListener("storage", callback);
   return () => {
@@ -329,8 +430,22 @@ export async function processAuthCallback(
     setSessionExpiry();
     notifyAuthChange();
 
-    // 3. รอให้ Backend เซ็ต HttpOnly Cookie (token และ moph_token)
-    await syncBackendAuthCookie(token);
+    // 3. รอให้ Backend เซ็ต HttpOnly Cookie และดึง appRole + isActive ล่าสุดจากฐานข้อมูล
+    const syncedAccess = await syncBackendAuthCookie(token, {
+      cid,
+      providerId,
+      name: userObj.name,
+      role,
+      hospcode,
+    });
+
+    if (syncedAccess) {
+      userObj.appRole = syncedAccess.appRole;
+      userObj.userStatus = syncedAccess.userStatus;
+      userObj.isActive = syncedAccess.isActive;
+      setCookie("eye_donation_user", JSON.stringify(userObj));
+      notifyAuthChange();
+    }
 
     // 4. ล้าง query/hash ออกจากแถบ URL เพื่อความปลอดภัยและความสะอาดตา
     if (typeof window !== "undefined" && (window.location.search || window.location.hash)) {

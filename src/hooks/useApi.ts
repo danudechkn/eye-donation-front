@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getAuthHeaders, clearSession } from "@/lib/cookies";
 import {
+  API_BASE_URL,
   logoutFromBackend,
   notifyAuthChange,
   notifyUnauthorized,
@@ -19,6 +20,8 @@ import type {
   StatisticsParams,
   MophSendResponse,
   MophPreviewResponse,
+  ManagedUserItem,
+  ManagedUserPayload,
 } from "@/types";
 
 // Re-export shared types & cookie helpers for convenience
@@ -39,6 +42,9 @@ export type {
   StatisticsMonthlyTrend,
   StatisticsTopReasons,
   AuthUser,
+  AppRole,
+  ManagedUserItem,
+  ManagedUserPayload,
   MophSendResponse,
   MophPreviewResponse,
 } from "@/types";
@@ -59,17 +65,25 @@ export {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-async function apiFetch<T>(
-  endpoint: string,
+async function requestJson<T>(
+  url: string,
   options: RequestInit = {},
 ): Promise<ApiResponse<T>> {
-  const res = await fetch(`${API_URL}${endpoint}`, {
+  const res = await fetch(url, {
     ...options,
     credentials: "include",
     headers: { ...getAuthHeaders(), ...options.headers },
   });
 
-  if (res.status === 401 || res.status === 403) {
+  const data = (await res.json()) as ApiResponse<T>;
+
+  const isAuthFailure =
+    res.status === 401 ||
+    (res.status === 403 &&
+      typeof data?.message === "string" &&
+      /(token|expired)/i.test(data.message));
+
+  if (isAuthFailure) {
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
       void logoutFromBackend();
       clearSession();
@@ -78,7 +92,14 @@ async function apiFetch<T>(
     }
   }
 
-  return (await res.json()) as ApiResponse<T>;
+  return data;
+}
+
+async function apiFetch<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<ApiResponse<T>> {
+  return requestJson<T>(`${API_URL}${endpoint}`, options);
 }
 
 async function apiMutate<T>(
@@ -86,6 +107,17 @@ async function apiMutate<T>(
   options: RequestInit = {},
 ): Promise<ApiResponse<T>> {
   const result = await apiFetch<T>(endpoint, options);
+  if (result && !result.success && result.message) {
+    throw new Error(result.message);
+  }
+  return result;
+}
+
+async function adminFetch<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<ApiResponse<T>> {
+  const result = await requestJson<T>(`${API_BASE_URL}/api/admin${endpoint}`, options);
   if (result && !result.success && result.message) {
     throw new Error(result.message);
   }
@@ -164,6 +196,29 @@ export const api = {
       method: "GET",
       cache: "no-store",
     }),
+
+  // ---- Admin User Role Management (/api/admin/users) ----
+  getUsers: (search?: string) => {
+    const qs = search?.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+    return adminFetch<ManagedUserItem[]>(`/users${qs}`, { cache: "no-store" });
+  },
+
+  createUser: (data: ManagedUserPayload) =>
+    adminFetch<ManagedUserItem>(`/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  updateUser: (id: number | string, data: ManagedUserPayload) =>
+    adminFetch<ManagedUserItem>(`/users/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  deleteUser: (id: number | string) =>
+    adminFetch<null>(`/users/${id}`, { method: "DELETE" }),
 };
 
 // ============================================================

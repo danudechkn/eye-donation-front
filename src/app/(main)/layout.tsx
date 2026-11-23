@@ -1,5 +1,5 @@
-import { Sidebar } from "@/components/Sidebar";
-import { AuthGuard } from "@/components/AuthGuard";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 
 export default function MainLayout({
   children,

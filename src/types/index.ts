@@ -191,14 +191,45 @@ export interface StatisticsParams {
 }
 
 // ============================================================
-// Auth / User
+// Auth / User & RBAC Roles
 // ============================================================
+
+export type AppRole = "eye" | "organ" | "both" | "admin";
+export type UserStatus = "pending" | "active" | "suspended";
 
 export interface AuthUser {
   cid: string;
   name: string;
   role: string;
+  appRole?: AppRole;
+  userStatus?: UserStatus;
+  isActive?: boolean;
   hospcode: string;
   providerId: string;
   loginAt: string;
+}
+
+export interface ManagedUserItem {
+  id: number;
+  provider_id: string;
+  cid?: string | null;
+  name: string;
+  position?: string | null;
+  hospcode?: string | null;
+  app_role: AppRole;
+  status?: UserStatus;
+  is_active: boolean;
+  last_login_at?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ManagedUserPayload {
+  provider_id?: string;
+  name?: string;
+  position?: string | null;
+  hospcode?: string | null;
+  app_role?: AppRole;
+  status?: UserStatus;
+  is_active?: boolean;
 }

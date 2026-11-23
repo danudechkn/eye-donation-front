@@ -3,28 +3,29 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { MAIN_LOGIN_URL, processAuthCallback } from "@/lib/auth";
+import { getDefaultHomeRoute, getEffectiveAppRole } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 import { useIsClient } from "@/hooks/useIsClient";
 
 export default function LoginPage() {
   const isClient = useIsClient();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!isClient) return;
 
     if (isAuthenticated) {
-      router.push("/dashboard");
+      router.push(getDefaultHomeRoute(getEffectiveAppRole(user)));
       return;
     }
 
     void processAuthCallback({ context: "Login" }).then((result) => {
       if (result.authenticated) {
-        router.push("/dashboard");
+        router.push(getDefaultHomeRoute(getEffectiveAppRole(result.user)));
       }
     });
-  }, [isClient, isAuthenticated, router]);
+  }, [isClient, isAuthenticated, user, router]);
 
   const handleLogin = () => {
     const loginUrl = new URL(MAIN_LOGIN_URL);
